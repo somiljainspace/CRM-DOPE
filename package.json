@@ -1,0 +1,25 @@
+{
+  "name": "small-marketplace-cdp",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "format": "prettier --write \"packages/**/*.ts\"",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "health": "bash scripts/healthcheck.sh",
+    "seed": "npm run seed --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.2.2",
+    "prettier": "^3.0.3"
+  }
+}

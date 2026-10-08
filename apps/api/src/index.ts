@@ -1,0 +1,23 @@
+process.env.PG_HOST = process.env.PG_HOST || 'localhost';
+process.env.PG_PORT = process.env.PG_PORT || '5433';
+process.env.PG_USER = process.env.PG_USER || 'postgres';
+process.env.PG_PASSWORD = process.env.PG_PASSWORD || 'password';
+process.env.PG_DATABASE = process.env.PG_DATABASE || 'cdp_crm';
+import { buildApp } from './server';
+import { config } from './config';
+
+const start = async () => {
+  const app = buildApp();
+
+  try {
+    await app.listen({ port: config.port, host: '0.0.0.0' });
+    app.log.info(`Server listening on port ${config.port}`);
+  } catch (err) {
+    app.log.error(err);
+    process.exit(1);
+  }
+};
+
+if (require.main === module) {
+  start();
+}
