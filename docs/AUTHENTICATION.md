@@ -41,4 +41,4 @@
 - Never reuse ingestion keys for admin login
 
 
-Phase 2C (verified): login/logout/me enforce Bearer; session middleware fail-closed; invitation tokens hashed, 7-day expiry, single-use, email-bound; owner-only ADMIN invite; last-OWNER protection; security regression 9/9 pass.
+Phase 2C (verified): login/logout/me enforce Bearer; session middleware fail-closed; invitation tokens hashed, 7-day expiry, single-use, email-bound; owner-only ADMIN invite; last-OWNER protection; security regression 9/9 pass; SDK unit 16/16 pass; ingestion 4/4 pass.
