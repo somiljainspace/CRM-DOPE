@@ -1,0 +1,1 @@
+import {Pool} from "pg"; export async function createSession(pg:Pool,userId:string,tokenHash:string,expiresAt:Date){await pg.query("INSERT INTO platform_sessions(user_id,token_hash,expires_at) VALUES($1,$2,$3)",[userId,tokenHash,expiresAt]); return tokenHash;}
