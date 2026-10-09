@@ -11,6 +11,7 @@ export const BaseEventSchema = EventIdentitySchema.extend({
   timestamp: z.string().datetime(),
   event: z.string(),
   properties: z.record(z.any()).default({}),
+  sessionId: z.string().optional().describe("Browser session identifier; derived server-side or provided by SDK"),
   context: z.object({
     userAgent: z.string().optional(),
     ip: z.string().optional(),
