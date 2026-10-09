@@ -6,6 +6,8 @@ import { config } from './config';
 import { authenticateApiKey } from './auth';
 import { trackRoutes } from './routes/track';
 import { healthRoutes } from './routes/health';
+import { authRoutes } from './routes/auth';
+import { membershipRoutes } from './routes/control/members';
 
 export function buildApp() {
   const app = Fastify({
@@ -23,11 +25,13 @@ export function buildApp() {
 
   // Apply auth only to ingestion routes; health/ready open
   app.addHook('onRequest', async (request, reply) => {
-    if (request.url === '/health' || request.url === '/ready') return;
+    if (request.url === '/health' || request.url === '/ready' || request.url.startsWith('/v1/auth/') || request.url.startsWith('/v1/control/')) return;
     return authenticateApiKey(request, reply);
   });
 
   app.register(healthRoutes);
+  app.register(authRoutes);
+  app.register(membershipRoutes);
   app.register(trackRoutes);
 
   return app;
