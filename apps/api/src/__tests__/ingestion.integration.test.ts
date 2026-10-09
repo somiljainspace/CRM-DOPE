@@ -1,7 +1,7 @@
 import { buildApp } from '../server';
 import { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
-import { hashApiKey } from '../../repositories/apiKeys';
+import { hashApiKey } from '../repositories/apiKeys';
 
 // Integration test: requires running Docker services (postgres + clickhouse)
 describe('Ingestion Integration', () => {

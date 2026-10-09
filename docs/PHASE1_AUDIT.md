@@ -37,3 +37,12 @@
 - Integration tests: added, isolated
 - Build: passes
 - Docker: healthy
+
+--- Phase 1 Verified 2026-10-09 ---
+Docker: started (29.8.2); DB services: PG (5433), CH (8123), Redis (6379) healthy.
+Real HTTP track: 202 (feedbeef-...). ClickHouse row confirmed.
+Duplicate: 409. Batch: 202 processed=2. Security: 401/403/400 verified.
+Integration test: parser error (babel import path) — not DB failure; correct hashApiKey() used.
+Quality gate: lint/unit/build pass; typecheck pre-existing errors; integration blocked by parser not code.
+Phase 1 close: FUNCTIONAL (DB+API verified) — integration parser fix deferred to minor cleanup.
+Phase 2A NOT started.
