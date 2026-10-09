@@ -1,4 +1,5 @@
 import { buildApp } from '../../server';
+import { randomUUID } from 'crypto';
 import { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
 
@@ -38,6 +39,7 @@ describe('security regression — full fixtures', () => {
     // Seed workspaces + memberships
     await pg.query(`INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1, $2, 'main', 'main') ON CONFLICT DO NOTHING`, [WS_MAIN, FIX_TENANT]);
     await pg.query(`INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1, $2, 'other', 'other') ON CONFLICT DO NOTHING`, [WS_OTHER, FIX_TENANT]);
+    await pg.query(`INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1, $2, 'main', 'main') ON CONFLICT DO NOTHING`, [WS_MAIN, FIX_TENANT]);
     
     await pg.query(`INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1, $2, 'VIEWER') ON CONFLICT DO NOTHING`, [U_VIEWER, WS_MAIN]);
     await pg.query(`INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1, $2, 'ADMIN') ON CONFLICT DO NOTHING`, [U_ADMIN, WS_MAIN]);
@@ -53,7 +55,7 @@ describe('security regression — full fixtures', () => {
   it('valid session accepted', async () => {
     const r = await app.inject({method:'GET',url:'/v1/auth/me',headers:{authorization:`Bearer ${TOK_VAL}`}});
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.payload).email).toBe('viewer@test.local');
+    expect(JSON.parse(r.payload).user.email).toBe('viewer@test.local');
   });
 
   it('viewer cannot perform administrative action (invite)', async () => {
@@ -73,7 +75,7 @@ describe('security regression — full fixtures', () => {
   });
 
   it('valid ingestion key still works', async () => {
-    const r = await app.inject({method:'POST',url:'/v1/track',headers:{authorization:'Bearer sk_pc2cfx_2026'},payload:{tenantId:FIX_TENANT,eventId:'22222222-f222-4222-a222-222222222222',timestamp:new Date().toISOString(),type:'track',event:'fixture_t'}});
+    const r = await app.inject({method:'POST',url:'/v1/track',headers:{authorization:'Bearer sk_pc2cfx_2026'},payload:{tenantId:FIX_TENANT,eventId: randomUUID(),timestamp:new Date().toISOString(),type:'track',event:'fixture_t'}});
     expect(r.statusCode).toBe(202);
   });
 });

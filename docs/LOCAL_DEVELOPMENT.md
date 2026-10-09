@@ -12,3 +12,6 @@
 10. docker compose down
 
 **Docker required**: Integration and end-to-end tests require live PostgreSQL and ClickHouse via Docker. When Docker is unavailable, these tests cannot execute and must NOT be considered passing.
+
+
+Test fixtures: dedicated fixture-tenant (f0eebc99...) + api_key; security suite 9/9 passed using real DB/HTTP; ingestion verified (202 + CH query).

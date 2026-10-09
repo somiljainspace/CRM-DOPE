@@ -56,7 +56,7 @@ It is inspired by the category of products such as Braze, CleverTap, MoEngage, a
 - Campaigns, engagement channels (email/SMS/push/webhook)
 - CRM features, AI features
 - Full platform-user authentication provider (OAuth/login)
-- Control-plane REST routes under `/v1/control/*`
+- Control-plane REST routes `/v1/auth/*` + `/v1/control/*` active (authorization + members + invitations)
 
 ## Architecture
 

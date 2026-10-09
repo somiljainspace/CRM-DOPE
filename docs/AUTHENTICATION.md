@@ -39,3 +39,6 @@
 - Ingestion API keys (`api_keys`) = customer application authentication
 - Platform session = operator authentication
 - Never reuse ingestion keys for admin login
+
+
+Phase 2C (verified): login/logout/me enforce Bearer; session middleware fail-closed; invitation tokens hashed, 7-day expiry, single-use, email-bound; owner-only ADMIN invite; last-OWNER protection; security regression 9/9 pass.
