@@ -47,16 +47,21 @@ It is inspired by the category of products such as Braze, CleverTap, MoEngage, a
 - Control-plane hierarchy: Organization/Tenant → Workspace → Project → Environment → API Key
 - Role model: OWNER, ADMIN, ANALYST, DEVELOPER, VIEWER (data model only)
 
-### Not Yet Implemented (Deferred)
+### Implemented (Phase 3A)
+
+- Browser SDK (`packages/browser-sdk/`) with consent, batching, identity
+- Publishable browser keys (`pk_`) with origin policy and revocation
+
+Not Yet Implemented (Deferred)
 
 - Dashboard / web UI (no frontend)
-- Browser SDK, mobile SDKs
+- Mobile SDKs
 - Sessions, device profiles, identity resolution
 - Segmentation engine, funnels, retention analysis
 - Campaigns, engagement channels (email/SMS/push/webhook)
 - CRM features, AI features
-- Full platform-user authentication provider (OAuth/login)
-- Control-plane REST routes `/v1/auth/*` + `/v1/control/*` active (authorization + members + invitations)
+- Platform auth (login/logout/me/session middleware + invitation/member)/(Phase 2B-2C)
+- Control-plane REST routes `/v1/auth/*` + `/v1/control/*` + browser-key provisioning `/v1/control/browser-keys` active
 
 ## Architecture
 

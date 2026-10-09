@@ -1,0 +1,18 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>CRM-DOPE Browser SDK Demo</title></head>
+<body>
+<h1>Marketplace SDK Demo (test data only)</h1>
+<button id="pv">Product viewed</button>
+<button id="sp">Search performed</button>
+<button id="atc">Add to cart</button>
+<button id="consent">Opt in / Opt out</button>
+<script type="module">
+import { init } from '../../packages/browser-sdk/src/index.ts';
+const cdp = init({ key: 'pk_test_demo', endpoint: 'http://localhost:3000/v1/track/batch', consent: false });
+let on = false;
+document.getElementById('consent').onclick = () => { on = !on; on ? cdp.optIn() : cdp.optOut(); };
+document.getElementById('pv').onclick = () => cdp.track({ event: 'product_viewed', properties: { product_id: 'p-123' } });
+document.getElementById('sp').onclick = () => cdp.track({ event: 'search_performed', properties: { query: 'chair' } });
+document.getElementById('atc').onclick = () => cdp.track({ event: 'add_to_cart', properties: { product_id: 'p-123', qty: 1 } });
+</script>
+</body></html>
