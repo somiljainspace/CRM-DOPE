@@ -3,6 +3,8 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 
 export interface AuthenticatedRequest extends FastifyRequest {
   tenantId?: string;
+  environmentId?: string;
+  projectId?: string;
 }
 
 export async function authenticateApiKey(
@@ -35,4 +37,6 @@ export async function authenticateApiKey(
 
   // Attach authenticated tenant to request; this is the ONLY authority for tenant identity
   request.tenantId = record.tenant_id;
+  request.environmentId = record.environment_id;
+  request.projectId = record.project_id;
 }

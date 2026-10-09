@@ -62,3 +62,35 @@ describe('Consent, Identity, Queue, Retry', () => {
     expect(s['queue'].length).toBe(0);
   });
 });
+
+describe('Lifecycle cleanup', () => {
+  it('destroy stops timer and clears state', () => {
+    const s = new BrowserSDK({ key: 'pk_test_x', consent: true });
+    s.track({ event: 'x' });
+    s.destroy();
+    expect(s['consent']).toBe(false);
+    expect(s['timer']).toBeUndefined();
+    expect(s['queue'].length).toBe(0);
+    expect(s['anonymousId']).toBeUndefined();
+  });
+  it('repeated init/destroy does not leak timers', () => {
+    const s = new BrowserSDK({ key: 'pk_test_x', consent: true });
+    s.destroy();
+    s.destroy(); // repeat
+    expect(s['timer']).toBeUndefined();
+  });
+});
+
+describe('SDK lifecycle cleanup', () => {
+  it('destroy clears timer', () => {
+    const s = new BrowserSDK({ key: 'pk_test_x', consent: true });
+    s.destroy();
+    expect(s['timer']).toBeUndefined();
+    expect(s['consent']).toBe(false);
+  });
+  it('repeated destroy safe', () => {
+    const s = new BrowserSDK({ key: 'pk_test_x', consent: true });
+    s.destroy(); s.destroy();
+    expect(s['timer']).toBeUndefined();
+  });
+});

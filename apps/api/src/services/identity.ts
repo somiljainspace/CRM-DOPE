@@ -24,7 +24,7 @@ export async function resolveProfile(input: ResolveInput): Promise<{ profileId: 
         const ins = await client.query('INSERT INTO customer_profiles (tenant_id, project_id, environment_id, user_id, traits) VALUES ($1,$2,$3,$4,$5) RETURNING id', [input.tenantId, input.projectId, input.environmentId, input.userId, JSON.stringify(input.traits || {})]);
         await client.query('INSERT INTO customer_identities (tenant_id, project_id, environment_id, profile_id, identity_type, identity_value) VALUES ($1,$2,$3,$4,$5,$6)', [input.tenantId, input.projectId, input.environmentId, ins.rows[0].id, 'user_id', input.userId]);
       } else {
-        await client.query('UPDATE customer_profiles SET last_seen_at = CURRENT_TIMESTAMP, traits = COALESCE(traits,\'{}\')::jsonb || $4 WHERE id = $1', [iden.rows[0].id, JSON.stringify(input.traits || {})]);
+        await client.query('UPDATE customer_profiles SET last_seen_at = CURRENT_TIMESTAMP, traits = COALESCE(traits,\'{}\')::jsonb || $2 WHERE id = $1', [iden.rows[0].id, JSON.stringify(input.traits || {})]);
       }
       // Merge anonymous -> identified if different profiles
       if (input.anonymousId) {

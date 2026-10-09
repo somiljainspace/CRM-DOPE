@@ -79,6 +79,15 @@ export class BrowserSDK {
     }).catch(() => { /* observable via return value */ });
   }
 
+
+  destroy() {
+    this.consent = false;
+    if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
+    this.queue = [];
+    this.anonymousId = undefined;
+    this.userId = undefined;
+  }
+
   private startFlush() {
     if (this.timer) clearInterval(this.timer);
     this.timer = setInterval(() => this.flush(), this.config.flushIntervalMs);

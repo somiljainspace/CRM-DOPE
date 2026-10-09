@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { buildApp } from '../server';
 import { FastifyInstance } from 'fastify';
 import { Pool } from 'pg';
@@ -58,7 +59,7 @@ describe('Ingestion Integration', () => {
       headers: { authorization: `Bearer ${apiKey}` },
       payload: {
         tenantId,
-        eventId: require('crypto').randomUUID(),
+        eventId: randomUUID(),
         timestamp: new Date().toISOString(),
         type: 'track',
         event: 'integration_test',
@@ -75,7 +76,7 @@ describe('Ingestion Integration', () => {
       headers: { authorization: 'Bearer wrong_key' },
       payload: {
         tenantId,
-        eventId: require('crypto').randomUUID(),
+        eventId: randomUUID(),
         timestamp: new Date().toISOString(),
         type: 'track',
         event: 'should_fail',
@@ -92,7 +93,7 @@ describe('Ingestion Integration', () => {
       headers: { authorization: `Bearer ${apiKey}` },
       payload: {
         tenantId: '99999999-9999-9999-9999-999999999999',
-        eventId: require('crypto').randomUUID(),
+        eventId: randomUUID(),
         timestamp: new Date().toISOString(),
         type: 'track',
         event: 'tenant_mismatch',
@@ -107,14 +108,14 @@ describe('Ingestion Integration', () => {
       batch: [
         {
           tenantId,
-          eventId: require('crypto').randomUUID(),
+          eventId: randomUUID(),
           timestamp: new Date().toISOString(),
           type: 'track',
           event: 'batch_1',
         },
         {
           tenantId,
-          eventId: require('crypto').randomUUID(),
+          eventId: randomUUID(),
           timestamp: new Date().toISOString(),
           type: 'track',
           event: 'batch_2',

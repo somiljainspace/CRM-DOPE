@@ -13,11 +13,10 @@ export async function identifyRoutes(app: FastifyInstance) {
   app.post('/v1/identify', async (req, reply: FastifyReply) => {
     try {
       const body = IdentifySchema.parse(req.body);
-      const auth = (req.headers.authorization || '') as string;
       const tenantId = (req as any).tenantId;
       if (!tenantId) return reply.code(401).send({ error: 'Unauthorized' });
       // Server-derived tenant; ignore body.tenantId for authorization
-      const result = await resolveProfile({ tenantId, projectId: '', environmentId: '', anonymousId: body.anonymousId, userId: body.userId, traits: body.traits });
+      const result = await resolveProfile({ tenantId, projectId: (req as any).projectId || '00000000-0000-0000-0000-000000000000', environmentId: (req as any).environmentId || '00000000-0000-0000-0000-000000000000', anonymousId: body.anonymousId, userId: body.userId, traits: body.traits });
       return reply.code(200).send({ profileId: result.profileId, merged: !!result.merged });
     } catch (err: any) {
       return reply.code(400).send({ error: 'Bad Request', message: err.message });

@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { config } from './config';
 import { authenticateApiKey } from './auth';
 import { trackRoutes } from './routes/track';
+import { identifyRoutes } from './routes/identify';
+import { profileRoutes } from './routes/profiles';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { membershipRoutes } from './routes/control/members';
@@ -33,6 +35,8 @@ export function buildApp() {
   app.register(authRoutes);
   app.register(membershipRoutes);
   app.register(trackRoutes);
+  app.register(identifyRoutes);
+  app.register(profileRoutes);
 
   return app;
 }
