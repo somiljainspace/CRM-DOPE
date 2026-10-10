@@ -42,6 +42,12 @@ export function validateWebhookUrl(raw: string, opts: { allowLocal?: boolean } =
     }
     if (u.username || u.password) return { ok: false, error: 'URL credentials not allowed' };
     if (!u.hostname) return { ok: false, error: 'Missing hostname' };
+    // Reject loopback / special hostnames at validation (SSRF defense)
+    const forbiddenHosts = new Set([
+      'localhost', 'localhost.localdomain',
+      '0.0.0.0', '127.0.0.1', '::1', '0:0:0:0:0:0:0:1',
+    ]);
+    if (forbiddenHosts.has(u.hostname.toLowerCase()) && !opts.allowLocal) return { ok: false, error: 'Loopback/special hostname blocked' };
     const ip = net.isIP(u.hostname);
     if (ip) {
       const blocked = ip === 4 ? isPrivateIPv4(u.hostname) : isPrivateIPv6(u.hostname);
