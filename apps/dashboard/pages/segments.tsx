@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { apiFetch } from '../lib/api';
 
 type Condition = {
@@ -14,6 +15,8 @@ export default function SegmentsPage() {
     { kind: 'profile_trait', field: 'plan', operator: 'equals', value: '' },
   ]);
   const [segments, setSegs] = useState<any[]>([]);
+  const router = useRouter();
+  const workspaceId = (router.query.workspaceId as string | undefined) || '';
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [preview, setPreview] = useState<any>(null);
@@ -24,7 +27,7 @@ export default function SegmentsPage() {
   const load = useCallback(async () => {
     try {
       const res = await apiFetch<{ segments?: any[] }>('v1/control/segments', {
-        query: { workspaceId: 'me', limit: 10 },
+        query: { workspaceId: workspaceId || undefined, limit: 10 },
       });
       setSegs(res.segments || []);
     } catch (e: any) {
@@ -139,7 +142,7 @@ export default function SegmentsPage() {
 
           <div className="flex gap-3">
             <button onClick={async () => { setSaving(true); setErr(''); try { const r = await apiFetch<{ segment: { id: string } }>('v1/control/segments', { method: 'POST', query: { workspaceId: 'me' }, body: { name, definition: def() } }); setSavedId(r.segment.id); } catch (e: any) { setErr(e?.message || 'Save failed'); } finally { setSaving(false); } }} disabled={!name || conds.length === 0 || saving || loading} className="rounded-lg bg-ink-strong text-white text-sm px-4 py-2">Save</button>
-            {savedId && <button onClick={async () => { if (previewLoading) return; setPreviewLoading(true); setErr(''); try { const r = await apiFetch<{ matched_profiles: number; sample: string[]; truncated?: boolean; note?: string }>(`v1/control/segments/${savedId}/preview`, { method: 'POST', query: { workspaceId: 'me' } }); setPreview(r); } catch (e: any) { setErr(e?.message || 'Preview failed'); } finally { setPreviewLoading(false); } }} disabled={previewLoading || loading} className="rounded-lg bg-em text-white text-sm px-4 py-2">Preview</button>}
+            {savedId && <button onClick={async () => { if (previewLoading) return; setPreviewLoading(true); setErr(''); try { const r = await apiFetch<{ matched_profiles: number; sample: string[]; truncated?: boolean; note?: string }>(`v1/control/segments/${savedId}/preview`, { method: 'POST', query: { workspaceId: workspaceId || undefined } }); setPreview(r); } catch (e: any) { setErr(e?.message || 'Preview failed'); } finally { setPreviewLoading(false); } }} disabled={previewLoading || loading} className="rounded-lg bg-em text-white text-sm px-4 py-2">Preview</button>}
           </div>
           {err && <div role="alert" className="text-red-600 text-sm mt-3">{err}</div>}
         </section>
