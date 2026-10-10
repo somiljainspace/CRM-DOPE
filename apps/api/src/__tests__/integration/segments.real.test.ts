@@ -25,9 +25,9 @@ describe('Real HTTP Segments CRUD', () => {
     
     await pg.query('BEGIN');
     await pg.query('INSERT INTO tenants (id, name, created_at) VALUES ($1,$2,CURRENT_TIMESTAMP)', [tenantId, 'Seg Tenant']);
-    await pg.query("INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,'test-slug')", [workspaceId, tenantId, 'Seg WS']);
-    await pg.query('INSERT INTO projects (id, workspace_id, name, slug) VALUES ($1,$2,$3,'proj-slug')', [projectId, tenantId, 'Seg Proj']);
-    await pg.query('INSERT INTO environments (id, project_id, name, key, type) VALUES ($1,$2,$3,'env-key','development')', [envId, projectId, 'Seg Env']);
+    await pg.query("INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,$4)", [workspaceId, tenantId, 'Seg WS', 'seg-test-ws']);
+    await pg.query("INSERT INTO projects (id, workspace_id, name, slug) VALUES ($1,$2,$3,'proj-slug')", [projectId, workspaceId, 'Seg Proj']);
+    await pg.query("INSERT INTO environments (id, project_id, name, key, type) VALUES ($1,$2,$3,'env-key','development')", [envId, projectId, 'Seg Env']);
     await pg.query('INSERT INTO platform_users (id, email, password_hash) VALUES ($1,$2,$3)', [platformId, `${crypto.randomUUID()}@seg.local`, 'xxx']);
     await pg.query('INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1,$2,$3)', [platformId, workspaceId, 'OWNER']);
     await pg.query("INSERT INTO platform_sessions (token_hash, user_id, expires_at) VALUES ($1,$2, CURRENT_TIMESTAMP + interval '1 hour')", [tokenHash, platformId]);
