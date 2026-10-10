@@ -1,6 +1,6 @@
 import { SegmentDefinitionSchema, SegmentDefinition } from './definition';
 import { compileSegment } from './compiler';
-import { clickhouse } from '../repositories/events';
+import { clickhouse } from '../../repositories/events';
 
 export interface PreviewResult {
   matched_profiles: number;
@@ -32,7 +32,7 @@ export async function evaluateSegment(
       query_params: first.params,
       format: 'JSONEachRow',
     });
-    const rows: Array<{ id?: string }> = resultSet.data || [];
+    const rows: Array<{ id?: string }> = await resultSet.json();
     const ids = new Set<string>();
     for (const r of rows) { if (r.id) ids.add(String(r.id)); }
     const sample = [...ids].slice(0, 100);

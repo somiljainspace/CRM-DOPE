@@ -3,7 +3,7 @@ import { AuthenticatedPlatformRequest, requirePlatformSession } from '../auth/se
 import { getTenantForWorkspace, requirePermission } from '../services/authorization';
 import { SegmentDefinitionSchema } from '../services/segments/definition';
 import * as repo from '../repositories/segments';
-import { compileSegment } from '../services/segments/compiler';
+import { evaluateSegment } from '../services/segments/evaluator';
 import { z } from 'zod';
 
 export async function segmentRoutes(app: FastifyInstance): Promise<void> {
@@ -118,12 +118,14 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
       const seg = await repo.getSegment(segmentId, tenantId);
       if (!seg) return reply.code(404).send({ error: 'Not Found' });
-      const def = SegmentDefinitionSchema.parse(seg.definition_json);
-      const patterns = compileSegment(def, { tenantId, projectId: seg.project_id || workspaceId, environmentId: seg.environment_id || workspaceId, startDate: '2026-01-01', endDate: '2026-12-31' });
-      // Bounded preview: count + sample (not full membership)
-      const count = Math.min(patterns.length, 100); // bounded approximation for spec
-      const sample = [seg.id];
-      return reply.code(200).send({ count, sample, evaluated_at: new Date().toISOString(), definition_version: def.definition_version, truncated: false, sample_limit: 100, note: 'Dynamic evaluation; count approximate when identity reconciliation incomplete' });
+      const result = await evaluateSegment(segmentId, seg.definition_json, {
+        tenantId,
+        projectId: seg.project_id || workspaceId, // Fallback if old row lacks it
+        environmentId: seg.environment_id || workspaceId,
+        workspaceId,
+      });
+
+      return reply.code(200).send(result);
     } catch (err: any) {
       if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
