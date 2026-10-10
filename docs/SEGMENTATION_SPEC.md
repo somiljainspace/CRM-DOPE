@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 5A backend complete. Rule-builder UI, saved campaign audiences, campaign automation, and delivery channels are explicitly deferred to Phase 5B+.
+Phase 5A backend complete. Audience enumeration evaluates `profile_trait` rules continuously against Postgres and merges them with event-based rules (`event_occurrence`, `event_count`, `recency`) resolved asynchronously from ClickHouse via `analytics_events FINAL`. The system provides `eventual` consistency. Rule-builder UI, saved campaign audiences, campaign automation, and delivery channels are explicitly deferred to Phase 5B+.
 
 ## Segment model
 

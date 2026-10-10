@@ -16,6 +16,8 @@ delivery attempts, retries, tenant isolation. Not campaigns, messaging, UI.
 - Secret: AES-256-GCM encrypted; env key required; never returned; rotate explicitly
 - Signing: HMAC-SHA256 over canonical body + timestamp + delivery ID
 - Consent: default deny; purpose-scoped; withdrawal enforced at dispatch; recheck on retry
+- Concurrency: FOR UPDATE SKIP LOCKED on pending/retrying/processing jobs with 5 minute claim leases
+- Status Tracking: `partially_completed` status supported for mixed outcome activations
 
 ## Rules
 - Audience: bounded cap; safe refusal if evaluator cannot fully enumerate
