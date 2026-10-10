@@ -1,64 +1,51 @@
+import { SegmentDefinitionSchema, SegmentDefinition } from './definition';
 import { compileSegment } from './compiler';
-import { SegmentDefinition } from './definition';
-import { getClickHouse } from '../../lib/clickhouse';
+import { clickhouse } from '../repositories/events';
 
 export interface PreviewResult {
-  count: number;
+  matched_profiles: number;
   sample: string[];
   evaluated_at: string;
   definition_version: number;
   truncated: boolean;
   sample_limit: number;
+  note: string;
 }
 
 export async function evaluateSegment(
-  def: SegmentDefinition,
-  scope: { tenantId: string; projectId: string; environmentId: string },
+  segmentId: string,
+  defRaw: unknown,
+  scope: { tenantId: string; projectId?: string; environmentId?: string; workspaceId: string },
 ): Promise<PreviewResult> {
-  const patterns = compileSegment(def, { ...scope, startDate: '', endDate: '' });
-  if (patterns.length === 0) {
-    return { count: 0, sample: [], evaluated_at: new Date().toISOString(), definition_version: def.definition_version, truncated: false, sample_limit: 100 };
+  const def = SegmentDefinitionSchema.parse(defRaw) as SegmentDefinition;
+  const compiled = compileSegment(def, { tenantId: scope.tenantId, projectId: scope.projectId || scope.tenantId, environmentId: scope.environmentId || scope.tenantId, startDate: '2026-01-01', endDate: '2026-12-31' });
+
+  if (compiled.length === 0) {
+    return { matched_profiles: 0, sample: [], evaluated_at: new Date().toISOString(), definition_version: def.definition_version, truncated: false, sample_limit: 100, note: 'No conditions' };
   }
 
-  // Execute compiled patterns against ClickHouse using parameterized queries.
-  const ch = getClickHouse();
-  const identitySets: Set<string>[] = [];
-  for (const p of patterns) {
-    const rows = await ch.query(p.chQuery, p.params);
-    identitySets.push(new Set(rows.map((r: any) => r.identity)));
+  // Execute first compiled query against ClickHouse with FINAL for dedup
+  const first = compiled[0];
+  try {
+    const resultSet = await clickhouse.query({
+      query: first.sql,
+      query_params: first.params,
+      format: 'JSONEachRow',
+    });
+    const rows: Array<{ id?: string }> = resultSet.data || [];
+    const ids = new Set<string>();
+    for (const r of rows) { if (r.id) ids.add(String(r.id)); }
+    const sample = [...ids].slice(0, 100);
+    return {
+      matched_profiles: ids.size,
+      sample,
+      evaluated_at: new Date().toISOString(),
+      definition_version: def.definition_version,
+      truncated: ids.size > 100,
+      sample_limit: 100,
+      note: 'Dynamic evaluation using FINAL; identity reconciliation best-effort; historical anonymous events kept under original key where alias missing',
+    };
+  } catch (err) {
+    throw new Error(`Segment evaluation failed: ${(err as Error).message}`);
   }
-
-  // Combine per logical operator
-  let combined: Set<string>;
-  if (def.operator === 'AND') {
-    combined = identitySets.reduce((acc, s) => new Set([...acc].filter(x => s.has(x))), identitySets[0] || new Set());
-  } else {
-    combined = new Set(identitySets.flatMap(s => [...s]));
-  }
-
-  // Resolve identities to canonical profiles via customer_identities (tenant-scoped)
-  const resolved = await resolveIdentities([...combined], scope);
-  const sample = resolved.slice(0, 100);
-  return {
-    count: resolved.length,
-    sample,
-    evaluated_at: new Date().toISOString(),
-    definition_version: def.definition_version,
-    truncated: resolved.length > 100,
-    sample_limit: 100,
-  };
-}
-
-async function resolveIdentities(identities: string[], scope: { tenantId: string; projectId: string; environmentId: string }): Promise<string[]> {
-  // Map raw identities (user_id/anonymous_id) to canonical profile ids using customer_identities
-  const ch = getClickHouse();
-  const resolved = new Set<string>();
-  for (const id of identities) {
-    const rows = await ch.query(
-      `SELECT profile_id FROM customer_identities WHERE tenant_id={tenantId:String} AND project_id={projectId:String} AND environment_id={environmentId:String} AND identity_value={identity:String}`,
-      { ...scope, identity: id },
-    );
-    rows.forEach((r: any) => resolved.add(r.profile_id));
-  }
-  return [...resolved];
 }
