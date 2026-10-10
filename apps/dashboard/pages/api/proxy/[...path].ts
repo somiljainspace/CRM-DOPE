@@ -21,6 +21,7 @@ const ALLOWED_PREFIXES = [
   'v1/control/analytics/events',
   'v1/control/analytics/funnels',
   'v1/control/analytics/retention',
+  'v1/control/segments',
 ] as const;
 
 function isAllowed(path: string): boolean {
