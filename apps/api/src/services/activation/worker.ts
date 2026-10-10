@@ -4,6 +4,7 @@ import { validateWebhookUrl } from './urlValidation';
 import { checkConsent } from './consent';
 import { decryptSecret, signPayload } from './signing';
 import { deliverWebhook } from './delivery';
+import { computeRetryAfter, isPermanent } from './retry';
 
 import crypto from 'crypto';
 
@@ -13,15 +14,15 @@ export async function claimJobs(pg: Pool, workerId: string, limit = 5): Promise<
       SELECT dj.id FROM delivery_jobs dj
       JOIN activation_requests aj ON aj.id = dj.activation_request_id
       JOIN webhook_destinations wd ON wd.id = aj.destination_id
-      WHERE aj.status IN ('pending','retrying')
-        AND (aj.claimed_by IS NULL OR aj.claim_expires_at < NOW())
+      WHERE dj.status IN ('pending','retrying')
+        AND (dj.claimed_by IS NULL OR dj.claim_expires_at < NOW())
         AND wd.enabled = true
-      ORDER BY aj.created_at ASC, aj.id ASC
-      FOR UPDATE OF aj SKIP LOCKED LIMIT $1
+      ORDER BY dj.created_at ASC, dj.id ASC
+      FOR UPDATE OF dj SKIP LOCKED LIMIT $1
     )
-    UPDATE activation_requests aj SET status='processing', claimed_by=$2,
+    UPDATE delivery_jobs dj SET status='processing', claimed_by=$2,
       claim_expires_at=NOW()+interval '5 minutes', updated_at=NOW()
-    FROM next_jobs WHERE aj.id = next_jobs.id RETURNING aj.*
+    FROM next_jobs WHERE dj.id = next_jobs.id RETURNING dj.*
   `;
   return (await pg.query(sql, [limit, workerId])).rows;
 }
@@ -78,20 +79,20 @@ async function processAttemptBoundary(pg: Pool, job: any, workerId: string): Pro
     'X-CDP-Signature': sig,
     'Content-Type': 'application/json',
   }, 10000);
-  // Persist attempt (not falsely delivered)
-    // Create/update attempt: update existing (same attempt_number per job) or insert.
-  const upd = await pg.query(`UPDATE delivery_attempts SET status='processing', delivery_id=$1, attempted_at=COALESCE(attempted_at,NOW()) WHERE activation_request_id=$2 AND attempt_number=1`, [deliveryId, job.id]);
-  if ((upd.rowCount || 0) === 0) {
-    await pg.query(`INSERT INTO delivery_attempts (activation_request_id, job_id, attempt_number, delivery_id, profile_id, status, attempted_at)
-      VALUES ($1,$2,1,$3,$4,'processing',NOW())`, [job.id, job.id, deliveryId, job.profile_id||null]);
-  }
-  // After request completes, update the same attempt row.
-  await pg.query(`UPDATE delivery_attempts SET status=$1, http_status=$2, error_reason=$3, completed_at=NOW(), updated_at=NOW() WHERE activation_request_id=$4 AND attempt_number=$5`,
-    [result.ok ? 'delivered' : (result.status && result.status >= 500 ? 'retrying' : 'failed'), result.status || null, result.error || null, job.id, 1]);
-  if (result.ok && result.status && result.status < 400) {
-    await pg.query('UPDATE activation_requests SET status=$1, completed_at=NOW(), updated_at=NOW() WHERE id=$2', ['delivered', job.id]);
-  } else {
-    await pg.query('UPDATE activation_requests SET status=$1, updated_at=NOW() WHERE id=$2', ['retrying', job.id]);
-  }
+  // Persist exactly one physical attempt; finalize delivery_job accordingly.
+  const attemptRes = await pg.query('SELECT COALESCE(MAX(attempt_number),0)+1 AS n FROM delivery_attempts WHERE activation_request_id=$1 AND delivery_job_id=$2', [job.activation_request_id||job.id, deliveryId]);
+  const attemptNum: number = (attemptRes?.rows?.[0]?.n !== undefined && attemptRes?.rows?.[0]?.n !== null) ? Number(attemptRes.rows[0].n) : 1;
+  const deliveryJobId = job.id; // delivery_jobs id is the logical job
+  // Insert attempt (one per physical request)
+  await pg.query(`INSERT INTO delivery_attempts (activation_request_id, delivery_job_id, job_id, attempt_number, delivery_id, profile_id, status, http_status, error_reason, attempted_at, completed_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW(),NOW())`,
+    [job.activation_request_id||job.id, deliveryJobId, deliveryJobId, attemptNum, deliveryId, job.profile_id||null,
+     result.ok ? 'delivered' : (result.status && result.status >= 500 ? 'retrying' : 'failed'), result.status || null, result.error || null]);
+  // Update logical job
+  const jobStatus = result.ok && result.status && result.status < 400 ? 'delivered' : (result.status && result.status >= 500 ? 'retrying' : (isPermanent(result.status || null) ? 'failed' : 'retrying'));
+  const retryAtVal: Date | null = (jobStatus === 'retrying' && typeof attemptNum === 'number' && Number.isFinite(attemptNum)) ? computeRetryAfter(attemptNum) : null;
+  await pg.query(`UPDATE delivery_jobs SET status=$1, attempt_count=$2, next_attempt_at=$3, last_error=$4, claimed_by=$6, updated_at=NOW(), completed_at=CASE WHEN $1 IN ('delivered','failed','skipped') THEN NOW() ELSE completed_at END WHERE id=$5`, [jobStatus, attemptNum, retryAtVal, result.error || null, deliveryJobId, workerId]);
+  // Aggregate activation only when all jobs terminal (simplified here — full aggregation in service layer)
+  await pg.query(`UPDATE activation_requests SET status='delivered', completed_at=NOW(), updated_at=NOW() WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM delivery_jobs WHERE activation_request_id=$1 AND status NOT IN ('delivered','failed','skipped'))`, [job.activation_request_id||job.id]);
 }
 

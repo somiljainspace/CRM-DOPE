@@ -22,7 +22,7 @@ describe('Activation (real DB + HTTP)', () => {
     await pg.query("INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,'act-ws')", [workspaceId, tenantId, 'Act WS']);
     await pg.query("INSERT INTO projects (id, workspace_id, name, slug) VALUES ($1,$2,$3,'act-proj')", [projectId, workspaceId, 'Act Proj']);
     await pg.query('INSERT INTO platform_users (id, email, password_hash) VALUES ($1,$2,$3)', [platformId, `${crypto.randomUUID()}@act.local`, 'xxx']);
-    await pg.query('INSERT INTO users (id, tenant_id, email) VALUES ($1,$2,$3)', [platformId, workspaceId, `${crypto.randomUUID()}@act.local`]);
+    await pg.query("INSERT INTO users (id, tenant_id, email) VALUES ($1,$2,$3)", [platformId, tenantId, `${crypto.randomUUID()}@act.local`]);
     await pg.query('INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1,$2,$3)', [platformId, workspaceId, 'OWNER']);
     await pg.query("INSERT INTO platform_sessions (token_hash, user_id, expires_at) VALUES ($1,$2, CURRENT_TIMESTAMP + interval '1 hour')", [tokenHash, platformId]);
     await pg.query('COMMIT');
