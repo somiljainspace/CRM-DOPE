@@ -1,4 +1,4 @@
-import { generateSecret, encryptSecret, decryptSecret, signPayload } from '../../services/activation/signing';
+const { generateSecret, encryptSecret, decryptSecret, signPayload } = require('../../services/activation/signing');
 
 describe('Activation signing', () => {
   it('generates unique cryptographically secure secrets', () => {

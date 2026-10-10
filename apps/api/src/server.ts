@@ -9,6 +9,7 @@ import { identifyRoutes } from './routes/identify';
 import { profileRoutes } from './routes/profiles';
 import { analyticsRoutes } from './routes/analytics';
 import { segmentRoutes } from './routes/segments';
+import { activationRoutes } from './routes/activation';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { membershipRoutes } from './routes/control/members';
