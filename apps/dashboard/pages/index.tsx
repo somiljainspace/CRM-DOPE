@@ -92,11 +92,11 @@ export default function OverviewPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trends} aria-label="Event trend chart">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => formatBucket(v, 'day').slice(5)} fontSize={12} tick={{ fill: '#6b7280' }} />
-                  <YAxis fontSize={12} tick={{ fill: '#6b7280' }} allowDecimals={false} />
+                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => formatBucket(v, 'day').slice(5)} tick={{ fill: "#6b7280" }} />
+                  <YAxis tick={{ fill: "#6b7280" }} allowDecimals={false} />
                   <Tooltip
-                    formatter={(v: number) => [`${v} events`, 'Count']}
-                    labelFormatter={(v: string) => `Day: ${formatBucket(v, 'day')}`}
+                    formatter={(v) => [`${v} events`, "Count"] as [string, string]}
+                    labelFormatter={(v) => `Day: ${formatBucket(String(v), "day")}`}
                     contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontFamily: 'var(--font-sans)' }}
                   />
                   <Line type="monotone" dataKey="event_count" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 4, fill: '#0ea5e9', stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 6 }} name="Events" />

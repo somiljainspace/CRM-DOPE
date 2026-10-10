@@ -52,16 +52,31 @@ It is inspired by the category of products such as Braze, CleverTap, MoEngage, a
 - Browser SDK (`packages/browser-sdk/`) with consent, batching, identity
 - Publishable browser keys (`pk_`) with origin policy and revocation
 
+### Implemented (Phase 3B)
+
+- Identity resolution service (`/v1/identify`) with deterministic anonymous→identified merge
+- Profile read APIs with alias expansion and session tracking (sessions, device profiles)
+
+### Implemented (Phase 4A)
+
+- Product Analytics Engine (read-only): `/v1/control/analytics/trends|active-users|events|funnels|retention`
+- FINAL-based dedup on ClickHouse, server-derived tenant scoping, pure calculation helpers
+- Documented contracts in `docs/ANALYTICS_SPEC.md`
+
+### Implemented (Phase 4B)
+
+- Dashboard (`apps/dashboard/`): Next.js 13.5 + TypeScript + Tailwind + recharts, light theme
+- BFF auth (HttpOnly `cdp_session` cookie) + allowlisted analytics proxy with CSRF/origin protection
+- Screens: Overview, Trends, Active Users, Event Explorer, Funnels, Retention — all wired to real Fastify API
+- No saved-cohort UI (deferred: backend lacks structured cohort-query endpoint)
+- See `docs/DASHBOARD.md`
+
 Not Yet Implemented (Deferred)
 
-- Dashboard / web UI (no frontend)
 - Mobile SDKs
-- Sessions, device profiles, identity resolution
-- Segmentation engine, funnels, retention analysis
-- Campaigns, engagement channels (email/SMS/push/webhook)
+- Segmentation engine, campaign automation, engagement channels (email/SMS/push/webhook)
 - CRM features, AI features
-- Platform auth (login/logout/me/session middleware + invitation/member)/(Phase 2B-2C)
-- Control-plane REST routes `/v1/auth/*` + `/v1/control/*` + browser-key provisioning `/v1/control/browser-keys` active
+- Saved cohorts (needs backend cohort endpoint)
 
 ## Architecture
 
@@ -83,7 +98,7 @@ Browser / mobile / customer backend
   Query / Segmentation API (planned)
         |
         v
-  Next.js dashboard (planned)
+  Next.js dashboard (implemented in Phase 4B — see apps/dashboard/)
 ```
 
 ## Quick Start

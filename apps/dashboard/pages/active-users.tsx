@@ -100,9 +100,9 @@ export default function ActiveUsersPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={series} aria-label="Active users chart">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => v.slice(5)} fontSize={12} tick={{ fill: '#6b7280' }} />
-                  <YAxis fontSize={12} tick={{ fill: '#6b7280' }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontFamily: 'var(--font-sans)' }} formatter={(v: number) => [`${v} identities`, 'Active']} />
+                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => v.slice(5)} tick={{ fill: "#6b7280" }} />
+                  <YAxis tick={{ fill: "#6b7280" }} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontFamily: 'var(--font-sans)' }} formatter={(v) => [`${v} identities`, "Active"] as [string, string]} />
                   <Line type="monotone" dataKey="unique_users" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 4, fill: '#0ea5e9', stroke: '#fff', strokeWidth: 2 }} name="Active identities" />
                 </LineChart>
               </ResponsiveContainer>
