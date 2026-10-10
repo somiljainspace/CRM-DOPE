@@ -12,3 +12,4 @@ logs/
 *.sqlite
 tmp/
 .cache/
+*.tsbuildinfo

@@ -1,0 +1,20 @@
+/* Light theme tokens — restrained, readable analytics palette */
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #111827;
+  --color-ink-soft: #374151;
+  --color-ink-muted: #6b7280;
+  --color-paper: #f8fafc;
+  --color-canvas: #ffffff;
+  --color-ink-subtle: #e5e7eb;
+  --color-ink-divider: #f1f5f9;
+  --color-ink-strong: #0f172a;
+  --color-em: #0ea5e9;   /* a clean blue for active highlights only */
+  --color-em-soft: #e0f2fe;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body { font-family: var(--font-sans); background: var(--color-paper); color: var(--color-ink); }
