@@ -10,7 +10,8 @@ import crypto from 'crypto';
 export async function claimJobs(pg: Pool, workerId: string, limit = 5): Promise<any[]> {
   const sql = `
     WITH next_jobs AS (
-      SELECT aj.id FROM activation_requests aj
+      SELECT dj.id FROM delivery_jobs dj
+      JOIN activation_requests aj ON aj.id = dj.activation_request_id
       JOIN webhook_destinations wd ON wd.id = aj.destination_id
       WHERE aj.status IN ('pending','retrying')
         AND (aj.claimed_by IS NULL OR aj.claim_expires_at < NOW())

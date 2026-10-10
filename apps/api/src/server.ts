@@ -10,6 +10,7 @@ import { profileRoutes } from './routes/profiles';
 import { analyticsRoutes } from './routes/analytics';
 import { segmentRoutes } from './routes/segments';
 import { activationRoutes } from './routes/activation';
+import { statusRoutes } from './routes/activation-status';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { membershipRoutes } from './routes/control/members';
@@ -42,6 +43,7 @@ export function buildApp() {
   app.register(profileRoutes);
   app.register(analyticsRoutes);
   app.register(segmentRoutes);
-
+  app.register(statusRoutes);
+  app.register(activationRoutes);
   return app;
 }

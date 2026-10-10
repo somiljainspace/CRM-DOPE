@@ -55,3 +55,4 @@ delivery attempts, retries, tenant isolation. Not campaigns, messaging, UI.
 - Consent rechecked on every retry; withdrawal blocks subsequent attempts.
 - Cancellation supported for queued/retrying; terminal jobs never retried.
 - Status endpoints and pagination planned.
+Audience: bounded complete enum via postgresql profiles (profile_trait only); unsupported conditions rejected; cap 1000 env; persistent delivery jobs; worker gated to pending activations. Delivery: pinned HTTPS + HMAC preserved. Not claimed: event-based conditions (ClickHouse), retries, status/cancel APIs, live receiver.
