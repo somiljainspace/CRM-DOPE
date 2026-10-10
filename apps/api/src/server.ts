@@ -7,6 +7,7 @@ import { authenticateApiKey } from './auth';
 import { trackRoutes } from './routes/track';
 import { identifyRoutes } from './routes/identify';
 import { profileRoutes } from './routes/profiles';
+import { analyticsRoutes } from './routes/analytics';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { membershipRoutes } from './routes/control/members';
@@ -37,6 +38,7 @@ export function buildApp() {
   app.register(trackRoutes);
   app.register(identifyRoutes);
   app.register(profileRoutes);
+  app.register(analyticsRoutes);
 
   return app;
 }

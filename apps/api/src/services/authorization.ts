@@ -38,3 +38,8 @@ export async function requirePermission(userId: string, workspaceId: string, per
   if (!can(membership.role, permission)) throw new Error('Insufficient permissions');
   return membership.role;
 }
+
+export async function getTenantForWorkspace(workspaceId: string): Promise<string | null> {
+  const r = await pg.query('SELECT tenant_id FROM workspaces WHERE id = $1', [workspaceId]);
+  return r.rows.length ? r.rows[0].tenant_id : null;
+}

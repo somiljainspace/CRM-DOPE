@@ -12,8 +12,12 @@ import {
 import { sendError } from '../lib/errors';
 import { config } from '../config';
 
+// Hard zod ceiling is higher than maxBatchSize so that an oversized batch
+// is rejected as 413 (BatchTooLargeError) by the service layer rather than
+// a generic 400 schema error. The service-level check remains the
+// authoritative, documented limit.
 const BatchSchema = z.object({
-  batch: z.array(AnalyticsEventSchema).max(config.maxBatchSize),
+  batch: z.array(AnalyticsEventSchema).max(config.maxBatchSize * 2),
 });
 
 export async function trackRoutes(app: FastifyInstance): Promise<void> {

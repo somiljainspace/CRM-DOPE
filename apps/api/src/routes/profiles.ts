@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 
 import { Pool } from 'pg';
 import { AuthenticatedPlatformRequest, requirePlatformSession } from '../auth/session';
-import { requirePermission } from '../services/authorization';
+import { getTenantForWorkspace, requirePermission } from '../services/authorization';
 import { clickhouse } from '../repositories/events';
 
 const pg = new Pool({ host: process.env.PG_HOST || 'localhost', port: parseInt(process.env.PG_PORT || '5433', 10), user: process.env.PG_USER || 'postgres', password: process.env.PG_PASSWORD || 'password', database: process.env.PG_DATABASE || 'cdp_crm' });
@@ -23,7 +23,7 @@ export async function profileRoutes(app: FastifyInstance) {
       const { limit, offset } = parsePage(req.query);
       const r = await pg.query(
         'SELECT id, tenant_id, project_id, environment_id, user_id, anonymous_id, first_seen_at, last_seen_at FROM customer_profiles WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
-        [(req as any).tenantId, limit, offset]
+        [await getTenantForWorkspace((req.query as any).workspaceId || ''), limit, offset]
       );
       return reply.code(200).send({ profiles: r.rows });
     } catch { return reply.code(403).send({ error: 'Forbidden' }); }

@@ -17,6 +17,7 @@ export interface ClickHouseEventRow {
   timestamp: string;
   user_id: string | null;
   anonymous_id: string | null;
+  session_id: string;
   properties: string;
   context: string;
 }
@@ -47,6 +48,7 @@ export function toClickHouseRow(event: AnalyticsEvent): ClickHouseEventRow {
     timestamp: new Date(event.timestamp).toISOString().replace('T', ' ').replace('Z', ''),
     user_id: event.userId || null,
     anonymous_id: event.anonymousId || null,
+    session_id: (event as any).sessionId || '',
     properties: JSON.stringify(propertiesObj),
     context: JSON.stringify(event.context || {}),
   };

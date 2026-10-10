@@ -4,8 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import * as apiKeyRepo from '../repositories/apiKeys';
 import * as eventRepo from '../repositories/events';
 
-jest.mock('../../repositories/apiKeys');
-jest.mock('../../repositories/events');
+jest.mock('../repositories/apiKeys');
+jest.mock('../repositories/events');
 
 const mockGetApiKeyRecord = apiKeyRepo.getApiKeyRecord as jest.Mock;
 const mockInsertEvents = eventRepo.insertEvents as jest.Mock;
