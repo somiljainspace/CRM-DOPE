@@ -3,9 +3,11 @@ import { AuthenticatedPlatformRequest, requirePlatformSession } from '../auth/se
 import { getTenantForWorkspace, requirePermission } from '../services/authorization';
 import { z } from 'zod';
 import * as repo from '../repositories/activation';
+import crypto from 'crypto';
 import { validateWebhookUrl } from '../services/activation/urlValidation';
 import { encryptSecret, generateSecret } from '../services/activation/signing';
 import { checkConsent, upsertConsent } from '../services/activation/consent';
+import { createActivation } from '../services/activation/scheduler';
 
 const ENCRYPTION_KEY = (() => {
   const k = process.env.WEBHOOK_ENCRYPTION_KEY;
@@ -165,9 +167,17 @@ export async function activationRoutes(app: FastifyInstance): Promise<void> {
       const dest = await repo.getDestination(body.destinationId, tenantId);
       if (!dest) return reply.code(404).send({ error: 'Destination Not Found' });
       if (!dest.enabled) return reply.code(409).send({ error: 'Conflict', message: 'Destination disabled' });
-      // Audience integrity: current evaluator returns bounded preview (<=100), not complete audience.
-      // Complete enumeration is not yet implemented; refuse rather than activate partial audience.
-      return reply.code(501).send({ error: 'Not Implemented', message: 'Complete audience enumeration required before activation; current evaluator returns bounded preview only' });
+      // Load segment definition (authoritative scope: tenant-scoped segment repository)
+      const pgRepo = new (await import('pg')).Pool({ host: process.env.PG_HOST || 'localhost', port: parseInt(process.env.PG_PORT || '5433',10), user: process.env.PG_USER || 'postgres', password: process.env.PG_PASSWORD || 'password', database: process.env.PG_DATABASE || 'cdp_crm' });
+      const segRes = await pgRepo.query('SELECT definition_json FROM segments WHERE id=$1 AND tenant_id=$2', [segmentId, tenantId]);
+      if (!segRes.rows[0]) return reply.code(404).send({ error: 'Not Found', message: 'Segment Not Found' });
+      let def; try { def = typeof segRes.rows[0].definition_json === 'string' ? JSON.parse(segRes.rows[0].definition_json) : segRes.rows[0].definition_json; } catch { return reply.code(400).send({ error: 'Bad Request', message: 'Invalid segment definition' }); }
+      // Complete bounded audience enumeration + durable job staging.
+      const idempotencyKey = (body.idempotency_key || crypto.randomUUID()).toString();
+      const pgPool = new (await import('pg')).Pool({ host: process.env.PG_HOST || 'localhost', port: parseInt(process.env.PG_PORT || '5433',10), user: process.env.PG_USER || 'postgres', password: process.env.PG_PASSWORD || 'password', database: process.env.PG_DATABASE || 'cdp_crm' });
+      const result = await createActivation(pgPool, { tenantId, workspaceId, segmentId, segmentDefinition: def, destinationId: body.destinationId, purpose: body.purpose, createdBy: req.platformUser!.id, idempotencyKey });
+      if (result.status === 'failed') return reply.code(422).send({ error: 'Unprocessable Entity', message: result.note, audience_size: result.audienceSize });
+      return reply.code(202).send({ activation: { id: result.id, status: result.status, audience_size: result.audienceSize, note: result.note } });
     } catch (e: any) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
