@@ -28,3 +28,30 @@ delivery attempts, retries, tenant isolation. Not campaigns, messaging, UI.
 - Unit: URL security, HMAC, consent, retry, idempotency, payload limits
 - Integration: real PG destination/consent/job/claim/audit; local receiver for payload/retry/permanent
 - Existing regression (segment): 11/11 pass; real.test fixture pre-existing (documented)
+
+## Audience integrity (Phase 6A close)
+- Evaluator returns bounded preview (<=100 sample + truncation flag).
+- Activation endpoint refuses request when audience could not be fully enumerated (returns 501 with documented message).
+- Audience service (`services/activation/audience.ts`) defines safe refusal + bounded pagination placeholder.
+- Hard audience cap enforced before unbounded work.
+
+## Durable persistence (migration 009)
+- `activation_requests`: status, audience_size, payload_size, idempotency_key, cancellation timestamps.
+- `delivery_attempts`: attempt_number, delivery_id, profile_id, status, retry_at, attempted_at, completed_at, error_reason.
+- Foreign keys to webhook_destinations and activation_requests.
+
+## Worker behavior (documented, scaffold only)
+- Claim via `FOR UPDATE SKIP LOCKED`; concurrent safe.
+- Recheck consent immediately before delivery; fail closed on lookup error.
+- Validate URL at delivery (not just creation); block loopback/private; prevent redirects.
+- Decrypt secret at delivery boundary; sign exact canonical body; include delivery ID + timestamp; send documented headers.
+- At-least-once delivery documented; receiver deduplicates by stable delivery_id.
+- Graceful shutdown supported; in-flight requests may not stop immediately.
+
+## Retry and status
+- Bounded exponential backoff + jitter; configurable max attempts.
+- Retryable: network errors, timeouts, suitable 5xx, rate limits.
+- Permanent: invalid request, disabled destination, consent withdrawn, terminal.
+- Consent rechecked on every retry; withdrawal blocks subsequent attempts.
+- Cancellation supported for queued/retrying; terminal jobs never retried.
+- Status endpoints and pagination planned.
