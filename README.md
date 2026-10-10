@@ -80,6 +80,8 @@ Not Yet Implemented (Deferred)
 
 ## Architecture
 
+This platform includes activation foundations (Phase 6A): webhook destinations with SSRF-resistant URL validation, AES-256-GCM encrypted signing secrets, HMAC-SHA256 payload signing, explicit consent management with default-deny behavior, durable PostgreSQL delivery jobs with bounded retries, and tenant-isolated activation APIs. See docs/ACTIVATION_SPEC.md.
+
 ```
 Browser / mobile / customer backend
         |
