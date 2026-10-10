@@ -15,8 +15,8 @@ export async function statusRoutes(app: FastifyInstance): Promise<void> {
       const { activationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'segment:read');
-      const tenantId = await getTenantForWorkspace(workspaceId);
-      const ar = await pg.query('SELECT * FROM activation_requests WHERE id=$1 AND tenant_id=$2', [activationId, tenantId]);
+      const tenant = await getTenantForWorkspace(workspaceId);
+      const ar = await pg.query('SELECT * FROM activation_requests WHERE id=$1 AND tenant_id=$2', [activationId, tenant]);
       if (!ar.rows[0]) return reply.code(404).send({ error: 'Not Found' });
       const counts = await pg.query(
         "SELECT status, COUNT(*) as c FROM delivery_jobs WHERE activation_request_id=$1 GROUP BY status",
@@ -31,7 +31,7 @@ export async function statusRoutes(app: FastifyInstance): Promise<void> {
       const { activationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'segment:read');
-      const tenantId = await getTenantForWorkspace(workspaceId);
+      await getTenantForWorkspace(workspaceId);
       const lim = Math.min(Math.max(parseInt(limit,10),1),100);
       const off = Math.max(parseInt(offset,10),0);
       const jobs = await pg.query(
@@ -46,7 +46,7 @@ export async function statusRoutes(app: FastifyInstance): Promise<void> {
       const { activationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'segment:read');
-      const tenantId = await getTenantForWorkspace(workspaceId);
+      await getTenantForWorkspace(workspaceId);
       const lim = Math.min(Math.max(parseInt(limit,10),1),100);
       const off = Math.max(parseInt(offset,10),0);
       const q = delivery_job_id

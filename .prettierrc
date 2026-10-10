@@ -1,4 +1,3 @@
-# Prettier config for the project
 {
   "semi": true,
   "singleQuote": true,

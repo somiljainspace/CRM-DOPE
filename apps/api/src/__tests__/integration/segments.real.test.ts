@@ -10,7 +10,7 @@ describe('Real HTTP Segments CRUD', () => {
   let tenantId: string;
   let workspaceId: string;
   let tokenHash: string;
-  let tokenRaw = 'seg_test_token';
+  const tokenRaw = "seg_test_token_" + crypto.randomUUID();
   
   beforeAll(async () => {
     app = buildApp();
@@ -20,7 +20,7 @@ describe('Real HTTP Segments CRUD', () => {
     workspaceId = crypto.randomUUID();
     const projectId = crypto.randomUUID();
     const envId = crypto.randomUUID();
-    const platformId = crypto.randomUUID();
+    platformId = crypto.randomUUID();
     tokenHash = crypto.createHash('sha256').update(tokenRaw).digest('hex');
     
     await pg.query('BEGIN');
@@ -29,6 +29,8 @@ describe('Real HTTP Segments CRUD', () => {
     await pg.query("INSERT INTO projects (id, workspace_id, name, slug) VALUES ($1,$2,$3,'proj-slug')", [projectId, workspaceId, 'Seg Proj']);
     await pg.query("INSERT INTO environments (id, project_id, name, key, type) VALUES ($1,$2,$3,'env-key','development')", [envId, projectId, 'Seg Env']);
     await pg.query('INSERT INTO platform_users (id, email, password_hash) VALUES ($1,$2,$3)', [platformId, `${crypto.randomUUID()}@seg.local`, 'xxx']);
+    await pg.query("INSERT INTO users (id, tenant_id, email) VALUES ($1,$2,$3)", [platformId, tenantId, `${crypto.randomUUID()}@seg.local`]);
+
     await pg.query('INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1,$2,$3)', [platformId, workspaceId, 'OWNER']);
     await pg.query("INSERT INTO platform_sessions (token_hash, user_id, expires_at) VALUES ($1,$2, CURRENT_TIMESTAMP + interval '1 hour')", [tokenHash, platformId]);
     await pg.query('COMMIT');
@@ -40,7 +42,7 @@ describe('Real HTTP Segments CRUD', () => {
     await app.close();
   });
 
-  let segmentId: string;
+  let segmentId: string; let platformId: string;
 
   it('create and retrieve segment via HTTP', async () => {
     // 1. Create
@@ -73,7 +75,7 @@ describe('Real HTTP Segments CRUD', () => {
         }
       }
     });
-    expect(resCreateValid.statusCode).toBe(201);
+    if(resCreateValid.statusCode !== 201) console.log("DEBUG:", JSON.stringify({body: resCreateValid.body, platformId, workspaceId})); expect(resCreateValid.statusCode).toBe(201);
     const body = JSON.parse(resCreateValid.body);
     segmentId = body.segment.id;
     expect(segmentId).toBeDefined();

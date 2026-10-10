@@ -10,17 +10,22 @@ import * as repo from '../../repositories/activation';
 const pg = new Pool({ host: process.env.PG_HOST||'localhost', port: parseInt(process.env.PG_PORT||'5433'), user: process.env.PG_USER||'postgres', password: process.env.PG_PASSWORD||'password', database: process.env.PG_DATABASE||'cdp_crm' });
 
 describe('Activation (real DB + HTTP)', () => {
-  let app: any; let tenantId: string; let workspaceId: string; let tokenHash: string; const tokenRaw = 'activation_test_token_' + crypto.randomUUID();
+  let app: any; let tenantId: string; let platformId: string; let dummyProfile: string; let workspaceId: string; let tokenHash: string; const tokenRaw = 'activation_test_token_' + crypto.randomUUID();
 
   beforeAll(async () => {
     app = buildApp(); await app.ready();
     tenantId = crypto.randomUUID(); workspaceId = crypto.randomUUID();
-    const projectId = crypto.randomUUID(); const platformId = crypto.randomUUID();
+    const projectId = crypto.randomUUID(); platformId = crypto.randomUUID();
     tokenHash = crypto.createHash('sha256').update(tokenRaw).digest('hex');
     await pg.query('BEGIN');
     await pg.query('INSERT INTO tenants (id, name, created_at) VALUES ($1,$2,CURRENT_TIMESTAMP)', [tenantId, 'Activation Tenant']);
     await pg.query("INSERT INTO workspaces (id, tenant_id, name, slug) VALUES ($1,$2,$3,'act-ws')", [workspaceId, tenantId, 'Act WS']);
     await pg.query("INSERT INTO projects (id, workspace_id, name, slug) VALUES ($1,$2,$3,'act-proj')", [projectId, workspaceId, 'Act Proj']);
+    const envId = crypto.randomUUID();
+    await pg.query("INSERT INTO environments (id, project_id, name, key, type) VALUES ($1,$2,$3,$4,$5)", [envId, projectId, "Act Env", "act-env", "development"]);
+    dummyProfile = crypto.randomUUID();
+    await pg.query("INSERT INTO customer_profiles (id, tenant_id, project_id, environment_id) VALUES ($1,$2,$3,$4)", [dummyProfile, tenantId, projectId, envId]);
+
     await pg.query('INSERT INTO platform_users (id, email, password_hash) VALUES ($1,$2,$3)', [platformId, `${crypto.randomUUID()}@act.local`, 'xxx']);
     await pg.query("INSERT INTO users (id, tenant_id, email) VALUES ($1,$2,$3)", [platformId, tenantId, `${crypto.randomUUID()}@act.local`]);
     await pg.query('INSERT INTO user_memberships (user_id, workspace_id, role) VALUES ($1,$2,$3)', [platformId, workspaceId, 'OWNER']);
@@ -38,7 +43,7 @@ describe('Activation (real DB + HTTP)', () => {
     const secret = generateSecret();
     const enc = encryptSecret(secret, key);
     expect(decryptSecret(enc, key)).toBe(secret);
-    const row = await repo.createDestination({ tenantId, workspaceId, name: 'Hook', url: 'https://example.com/hook', encryptedSecret: enc, createdBy: 'u' });
+    const row = await repo.createDestination({ tenantId, workspaceId, name: 'Hook', url: 'https://example.com/hook', encryptedSecret: enc, createdBy: platformId });
     expect(row.id).toBeDefined();
     expect(row.signing_secret_encrypted).toBeInstanceOf(Buffer);
     const listed = await repo.listDestinations(tenantId);
@@ -60,7 +65,7 @@ describe('Activation (real DB + HTTP)', () => {
   });
 
   it('grants and withdraws consent', async () => {
-    const profileId = crypto.randomUUID();
+    const profileId = dummyProfile;
     await repo.upsertConsent({ tenantId, profileId, purpose: 'marketing', status: 'granted' });
     let r = await checkConsent(tenantId, profileId, 'marketing');
     expect(r.eligible).toBe(true);
@@ -71,7 +76,7 @@ describe('Activation (real DB + HTTP)', () => {
   });
 
   it('cross-tenant consent isolation', async () => {
-    const profileId = crypto.randomUUID();
+    const profileId = dummyProfile;
     await repo.upsertConsent({ tenantId, profileId, purpose: 'marketing', status: 'granted' });
     const otherTenant = crypto.randomUUID();
     const c = await repo.getConsent(otherTenant, profileId, 'marketing');

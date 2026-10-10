@@ -14,7 +14,7 @@ export async function claimJobs(pg: Pool, workerId: string, limit = 5): Promise<
       SELECT dj.id FROM delivery_jobs dj
       JOIN activation_requests aj ON aj.id = dj.activation_request_id
       JOIN webhook_destinations wd ON wd.id = aj.destination_id
-      WHERE dj.status IN ('pending','retrying')
+      WHERE dj.status IN ('pending','retrying','processing')
         AND (dj.claimed_by IS NULL OR dj.claim_expires_at < NOW())
         AND wd.enabled = true
       ORDER BY dj.created_at ASC, dj.id ASC
@@ -93,6 +93,23 @@ async function processAttemptBoundary(pg: Pool, job: any, workerId: string): Pro
   const retryAtVal: Date | null = (jobStatus === 'retrying' && typeof attemptNum === 'number' && Number.isFinite(attemptNum)) ? computeRetryAfter(attemptNum) : null;
   await pg.query(`UPDATE delivery_jobs SET status=$1, attempt_count=$2, next_attempt_at=$3, last_error=$4, claimed_by=$6, updated_at=NOW(), completed_at=CASE WHEN $1 IN ('delivered','failed','skipped') THEN NOW() ELSE completed_at END WHERE id=$5`, [jobStatus, attemptNum, retryAtVal, result.error || null, deliveryJobId, workerId]);
   // Aggregate activation only when all jobs terminal (simplified here — full aggregation in service layer)
-  await pg.query(`UPDATE activation_requests SET status='delivered', completed_at=NOW(), updated_at=NOW() WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM delivery_jobs WHERE activation_request_id=$1 AND status NOT IN ('delivered','failed','skipped'))`, [job.activation_request_id||job.id]);
+  await pg.query(`
+    WITH stats AS (
+      SELECT 
+        count(*) as total,
+        count(*) FILTER (WHERE status='delivered') as delivered,
+        count(*) FILTER (WHERE status IN ('pending','processing','retrying')) as active
+      FROM delivery_jobs WHERE activation_request_id=$1
+    )
+    UPDATE activation_requests ar
+    SET 
+      updated_at=NOW(), completed_at=NOW(),
+      status=CASE 
+        WHEN stats.delivered = stats.total THEN 'delivered'
+        WHEN stats.delivered > 0 THEN 'partially_completed'
+        ELSE 'failed'
+      END
+    FROM stats WHERE ar.id=$1 AND stats.active=0;
+  `, [job.activation_request_id||job.id]);
 }
 

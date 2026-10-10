@@ -20,6 +20,11 @@ const permissions: Record<string, Role[]> = {
   'role:change': ['OWNER'],
   'tenant:read': ['OWNER', 'ADMIN'],
   'tenant:write': ['OWNER'],
+  "webhook:read": ["OWNER", "ADMIN", "ANALYST", "DEVELOPER", "VIEWER"],
+  "webhook:write": ["OWNER", "ADMIN"],
+  "segment:read": ["OWNER", "ADMIN", "ANALYST", "DEVELOPER", "VIEWER"],
+  "segment:write": ["OWNER", "ADMIN"],
+
 };
 
 export async function getMembership(userId: string, workspaceId: string): Promise<{ role: Role } | null> {

@@ -6,6 +6,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:worker": "node dist/services/activation/worker-daemon.js",
+    "dev:worker": "ts-node src/services/activation/worker-daemon.ts",
+
     "dev": "ts-node src/index.ts",
     "lint": "eslint 'src/**/*.ts'",
     "typecheck": "tsc --noEmit",

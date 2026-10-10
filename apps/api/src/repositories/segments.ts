@@ -29,3 +29,10 @@ export async function deleteSegment(id: string, tenantId: string) {
   const r = await pg.query('DELETE FROM segments WHERE id=$1 AND tenant_id=$2 RETURNING id', [id, tenantId]);
   return r.rows[0] || null;
 }
+export async function getDefaultProjectAndEnv(workspaceId: string) {
+  const p = await pg.query('SELECT id FROM projects WHERE workspace_id = $1 LIMIT 1', [workspaceId]);
+  if (!p.rows.length) return null;
+  const e = await pg.query('SELECT id FROM environments WHERE project_id = $1 LIMIT 1', [p.rows[0].id]);
+  if (!e.rows.length) return null;
+  return { projectId: p.rows[0].id, environmentId: e.rows[0].id };
+}

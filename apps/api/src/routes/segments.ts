@@ -36,14 +36,17 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
       const body = req.body as any;
       const def = SegmentDefinitionSchema.parse(body.definition || { definition_version: 1, operator: 'AND', conditions: [] });
+      const defProj = await repo.getDefaultProjectAndEnv(workspaceId);
+      if (!defProj) return reply.code(400).send({ error: "Context Error", message: "Workspace lacks project/environment" });
+
       const row = await repo.createSegment({
-        tenantId, projectId: (req as any).projectId || workspaceId, environmentId: (req as any).environmentId || workspaceId,
+        tenantId, projectId: defProj.projectId, environmentId: defProj.environmentId,
         name: body.name, description: body.description, definition: JSON.stringify(def), version: def.definition_version, createdBy: req.platformUser!.id
       });
       return reply.code(201).send({ segment: { id: row.id, name: row.name, definition_version: row.definition_version } });
     } catch (err: any) {
       if (err.name === 'ZodError') return reply.code(400).send({ error: 'Bad Request', message: err.errors });
-      if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
+      if (err.message?.includes('permission') || err.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
     }
   });
@@ -60,7 +63,7 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       if (!row) return reply.code(404).send({ error: 'Not Found' });
       return reply.code(200).send({ segment: row });
     } catch (err: any) {
-      if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
+      if (err.message?.includes('permission') || err.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
     }
   });
@@ -77,6 +80,9 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       let defStr: string | undefined;
       if (body.definition) {
         const def = SegmentDefinitionSchema.parse(body.definition);
+      const defProj = await repo.getDefaultProjectAndEnv(workspaceId);
+      if (!defProj) return reply.code(400).send({ error: "Context Error", message: "Workspace lacks project/environment" });
+
         defStr = JSON.stringify(def);
       }
       const row = await repo.updateSegment(segmentId, tenantId, {
@@ -86,7 +92,7 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(200).send({ segment: row });
     } catch (err: any) {
       if (err.name === 'ZodError') return reply.code(400).send({ error: 'Bad Request', message: err.errors });
-      if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
+      if (err.message?.includes('permission') || err.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
     }
   });
@@ -103,7 +109,7 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
       if (!result) return reply.code(404).send({ error: 'Not Found' });
       return reply.code(200).send({ success: true });
     } catch (err: any) {
-      if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
+      if (err.message?.includes('permission') || err.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
     }
   });
@@ -127,7 +133,7 @@ export async function segmentRoutes(app: FastifyInstance): Promise<void> {
 
       return reply.code(200).send(result);
     } catch (err: any) {
-      if (err.message?.includes('permission')) return reply.code(403).send({ error: 'Forbidden' });
+      if (err.message?.includes('permission') || err.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
       return reply.code(400).send({ error: 'Bad Request', message: err.message });
     }
   });

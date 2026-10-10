@@ -6,7 +6,7 @@ import * as repo from '../repositories/activation';
 import crypto from 'crypto';
 import { validateWebhookUrl } from '../services/activation/urlValidation';
 import { encryptSecret, generateSecret } from '../services/activation/signing';
-import { checkConsent, upsertConsent } from '../services/activation/consent';
+import { upsertConsent } from '../services/activation/consent';
 import { createActivation } from '../services/activation/scheduler';
 
 const ENCRYPTION_KEY = (() => {

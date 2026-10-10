@@ -15,7 +15,7 @@ export function computeRetryAfter(attempt: number, retryAfterHeader?: string): D
   }
   return new Date(Date.now() + delay);
 }
-export function isRetryable(httpStatus: number | null, error?: string): boolean {
+export function isRetryable(httpStatus: number | null): boolean {
   if (httpStatus === null) return true; // network/timeout
   if (httpStatus >= 500 && httpStatus <= 599) return true;
   if (httpStatus === 408 || httpStatus === 425 || httpStatus === 429) return true;
