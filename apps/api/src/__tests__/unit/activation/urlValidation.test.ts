@@ -1,4 +1,4 @@
-const { validateWebhookUrl, isPrivateIPv4, isPrivateIPv6 } = require('../../services/activation/urlValidation');
+import { validateWebhookUrl, isPrivateIPv4, isPrivateIPv6 } from '../../../services/activation/urlValidation';
 
 describe('Webhook URL validation (SSRF)', () => {
   it('rejects HTTP in production mode', () => {

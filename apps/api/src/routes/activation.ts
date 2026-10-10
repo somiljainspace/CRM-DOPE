@@ -2,9 +2,27 @@ import { FastifyInstance } from 'fastify';
 import { AuthenticatedPlatformRequest, requirePlatformSession } from '../auth/session';
 import { getTenantForWorkspace, requirePermission } from '../services/authorization';
 import { z } from 'zod';
+import * as repo from '../repositories/activation';
+import { validateWebhookUrl } from '../services/activation/urlValidation';
+import { encryptSecret, generateSecret } from '../services/activation/signing';
+import { checkConsent, upsertConsent } from '../services/activation/consent';
+
+const ENCRYPTION_KEY = (() => {
+  const k = process.env.WEBHOOK_ENCRYPTION_KEY;
+  if (!k) return null;
+  const buf = Buffer.from(k, 'utf8');
+  if (buf.length !== 32) return null;
+  return buf;
+})();
+
+function requireKey(): Buffer {
+  if (!ENCRYPTION_KEY) throw new Error('WEBHOOK_ENCRYPTION_KEY must be 32 bytes');
+  return ENCRYPTION_KEY;
+}
 
 export async function activationRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onRequest', requirePlatformSession);
+
   app.post('/v1/control/webhook-destinations', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
@@ -13,11 +31,21 @@ export async function activationRoutes(app: FastifyInstance): Promise<void> {
       const tenantId = await getTenantForWorkspace(workspaceId);
       if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
       const body = req.body as any;
-      return reply.code(201).send({ destination: { id: 'd-1', name: body.name, url: body.url, enabled: true } });
+      if (!body.name || !body.url) return reply.code(400).send({ error: 'Bad Request', message: 'name and url required' });
+      const v = validateWebhookUrl(body.url);
+      if (!v.ok) return reply.code(400).send({ error: 'Bad Request', message: v.error });
+      const key = requireKey();
+      const secret = generateSecret();
+      const encrypted = encryptSecret(secret, key);
+      const row = await repo.createDestination({ tenantId, workspaceId, name: body.name, url: body.url, encryptedSecret: encrypted, createdBy: req.platformUser!.id });
+      return reply.code(201).send({ destination: { id: row.id, name: row.name, url: row.url, enabled: row.enabled, created_at: row.created_at } });
     } catch (e: any) {
-      return reply.code(e?.message?.includes('permission') ? 403 : 400).send({ error: 'Bad Request', message: e.message });
+      if (e?.message?.includes('permission') || e?.message?.includes('member')) return reply.code(403).send({ error: 'Forbidden' });
+      if (e?.message?.includes('WEBHOOK')) return reply.code(500).send({ error: 'Configuration Error', message: e.message });
+      return reply.code(400).send({ error: 'Bad Request', message: e.message });
     }
   });
+
   app.get('/v1/control/webhook-destinations', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
@@ -25,63 +53,121 @@ export async function activationRoutes(app: FastifyInstance): Promise<void> {
       await requirePermission(req.platformUser!.id, workspaceId, 'webhook:read');
       const tenantId = await getTenantForWorkspace(workspaceId);
       if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
-      return reply.code(200).send({ destinations: [] });
+      const limit = Math.min(Math.max(parseInt((req.query as any).limit || '25'), 1), 100);
+      const offset = Math.max(parseInt((req.query as any).offset || '0'), 0);
+      const rows = await repo.listDestinations(tenantId, limit, offset);
+      const safe = rows.map((r) => ({ id: r.id, name: r.name, url: r.url, enabled: r.enabled, created_at: r.created_at, updated_at: r.updated_at }));
+      return reply.code(200).send({ destinations: safe, pagination: { limit, offset, total: safe.length } });
     } catch (e: any) {
-      return reply.code(e?.message?.includes('permission') ? 403 : 400).send({ error: 'Bad Request', message: e.message });
+      return reply.code(403).send({ error: 'Forbidden' });
     }
   });
+
   app.get('/v1/control/webhook-destinations/:destinationId', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
       const { destinationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'webhook:read');
-      return reply.code(200).send({ destination: { id: destinationId, name: 'Test', url: 'https://example.com', enabled: true } });
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
+      const row = await repo.getDestination(destinationId, tenantId);
+      if (!row) return reply.code(404).send({ error: 'Not Found' });
+      return reply.code(200).send({ destination: { id: row.id, name: row.name, url: row.url, enabled: row.enabled, created_at: row.created_at, updated_at: row.updated_at } });
     } catch (e: any) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
   });
+
   app.patch('/v1/control/webhook-destinations/:destinationId', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
       const { destinationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'webhook:write');
-      return reply.code(200).send({ destination: { id: destinationId, updated: true } });
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
+      const body = req.body as any;
+      const fields: Partial<{ name: string; url: string; enabled: boolean; encryptedSecret: Buffer }> = {};
+      if (body.name !== undefined) fields.name = body.name;
+      if (body.url !== undefined) { const v = validateWebhookUrl(body.url); if (!v.ok) return reply.code(400).send({ error: 'Bad Request', message: v.error }); fields.url = body.url; }
+      if (body.enabled !== undefined) fields.enabled = !!body.enabled;
+      if (body.rotate_secret === true) { const key = requireKey(); fields.encryptedSecret = encryptSecret(generateSecret(), key); }
+      const row = await repo.updateDestination(destinationId, tenantId, fields);
+      if (!row) return reply.code(404).send({ error: 'Not Found' });
+      return reply.code(200).send({ destination: { id: row.id, name: row.name, url: row.url, enabled: row.enabled, updated_at: row.updated_at } });
     } catch (e: any) {
+      if (e?.message?.includes('WEBHOOK')) return reply.code(500).send({ error: 'Configuration Error', message: e.message });
       return reply.code(403).send({ error: 'Forbidden' });
     }
   });
+
   app.delete('/v1/control/webhook-destinations/:destinationId', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
       const { destinationId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'webhook:write');
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
+      const ok = await repo.deleteDestination(destinationId, tenantId);
+      if (!ok) return reply.code(404).send({ error: 'Not Found' });
       return reply.code(200).send({ success: true });
     } catch (e: any) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
   });
+
+  app.post('/v1/control/consent', async (req: AuthenticatedPlatformRequest, reply) => {
+    try {
+      const { workspaceId } = req.query as any;
+      z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
+      await requirePermission(req.platformUser!.id, workspaceId, 'member:write');
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
+      const body = req.body as any;
+      if (!body.profileId || !body.purpose || !body.status) return reply.code(400).send({ error: 'Bad Request', message: 'profileId, purpose, status required' });
+      if (!['granted', 'withdrawn'].includes(body.status)) return reply.code(400).send({ error: 'Bad Request', message: 'status must be granted or withdrawn' });
+      const row = await upsertConsent({ tenantId, profileId: body.profileId, purpose: body.purpose, status: body.status, source: body.source || null, policyVersion: body.policyVersion || null, createdBy: req.platformUser!.id });
+      return reply.code(201).send({ consent: { id: row.id, profileId: row.profile_id, purpose: row.purpose, status: row.status, granted_at: row.granted_at, withdrawn_at: row.withdrawn_at } });
+    } catch (e: any) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  });
+
+  app.get('/v1/control/consent', async (req: AuthenticatedPlatformRequest, reply) => {
+    try {
+      const { workspaceId } = req.query as any;
+      const { profileId, purpose } = req.query as any;
+      z.object({ workspaceId: z.string().uuid(), profileId: z.string(), purpose: z.string() }).parse({ workspaceId, profileId, purpose });
+      await requirePermission(req.platformUser!.id, workspaceId, 'member:read');
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
+      const c = await repo.getConsent(tenantId, profileId, purpose);
+      if (!c) return reply.code(200).send({ consent: null, eligible: false, reason: 'No consent record' });
+      return reply.code(200).send({ consent: { id: c.id, profileId: c.profile_id, purpose: c.purpose, status: c.status, granted_at: c.granted_at, withdrawn_at: c.withdrawn_at }, eligible: c.status === 'granted' });
+    } catch (e: any) {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+  });
+
+  // Activation creation: safe refusal until complete audience enumeration is available
   app.post('/v1/control/segments/:segmentId/activations', async (req: AuthenticatedPlatformRequest, reply) => {
     try {
       const { workspaceId } = req.query as any;
       const { segmentId } = req.params as any;
       z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
       await requirePermission(req.platformUser!.id, workspaceId, 'segment:write');
-      return reply.code(501).send({ error: 'Not Implemented', message: 'Audience enumeration required before activation' });
-    } catch (e: any) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
-  });
-  app.post('/v1/control/consent', async (req: AuthenticatedPlatformRequest, reply) => {
-    try {
-      const { workspaceId } = req.query as any;
-      z.object({ workspaceId: z.string().uuid() }).parse({ workspaceId });
-      await requirePermission(req.platformUser!.id, workspaceId, 'member:write');
+      const tenantId = await getTenantForWorkspace(workspaceId);
+      if (!tenantId) return reply.code(404).send({ error: 'Workspace Not Found' });
       const body = req.body as any;
-      if (!body.profileId || !body.purpose || !body.status) return reply.code(400).send({ error: 'Bad Request' });
-      return reply.code(201).send({ consent: { id: 'c-1', profileId: body.profileId, purpose: body.purpose, status: body.status } });
+      if (!body.destinationId || !body.purpose) return reply.code(400).send({ error: 'Bad Request', message: 'destinationId and purpose required' });
+      const dest = await repo.getDestination(body.destinationId, tenantId);
+      if (!dest) return reply.code(404).send({ error: 'Destination Not Found' });
+      if (!dest.enabled) return reply.code(409).send({ error: 'Conflict', message: 'Destination disabled' });
+      // Audience integrity: current evaluator returns bounded preview (<=100), not complete audience.
+      // Complete enumeration is not yet implemented; refuse rather than activate partial audience.
+      return reply.code(501).send({ error: 'Not Implemented', message: 'Complete audience enumeration required before activation; current evaluator returns bounded preview only' });
     } catch (e: any) {
       return reply.code(403).send({ error: 'Forbidden' });
     }
