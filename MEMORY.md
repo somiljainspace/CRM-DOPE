@@ -1,0 +1,1 @@
+- [Segmentation Phase 5A spec](memory/segmentation-spec-phase-5a.md) — rule language, query compiler, identity semantics, dedup

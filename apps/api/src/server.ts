@@ -8,6 +8,7 @@ import { trackRoutes } from './routes/track';
 import { identifyRoutes } from './routes/identify';
 import { profileRoutes } from './routes/profiles';
 import { analyticsRoutes } from './routes/analytics';
+import { segmentRoutes } from './routes/segments';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
 import { membershipRoutes } from './routes/control/members';
@@ -39,6 +40,7 @@ export function buildApp() {
   app.register(identifyRoutes);
   app.register(profileRoutes);
   app.register(analyticsRoutes);
+  app.register(segmentRoutes);
 
   return app;
 }
