@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { validateWebhookUrl } from './urlValidation';
 import { checkConsent } from './consent';
 import { decryptSecret, signPayload } from './signing';
+import { deliverWebhook } from './delivery';
 
 export async function claimJobs(pg: Pool, workerId: string, limit = 5): Promise<any[]> {
   const sql = `
@@ -56,14 +57,36 @@ async function processAttemptBoundary(pg: Pool, job: any, workerId: string): Pro
     await pg.query('UPDATE activation_requests SET status=$1, completed_at=NOW(), updated_at=NOW() WHERE id=$2', ['failed', job.id]);
     return;
   }
-  // 4. Secret decryption + HMAC canonical format verified (no secrets logged).
-  // Phase 6B completes: pinned HTTPS delivery, exact signed body sent, outcome persisted, retries scheduled.
-  // This boundary explicitly does NOT claim delivered — it validates and records attempt.
-  const attemptId = crypto.randomUUID();
-  await pg.query(
-    `INSERT INTO delivery_attempts (activation_request_id, job_id, attempt_number, delivery_id, profile_id, status, attempted_at)
-     VALUES ($1,$2,1,$3,$4,'processing',NOW())`,
-    [job.id, job.id, attemptId, job.profile_id || null]);
+  // Phase 6B: actual HTTPS delivery via pinned IP + signed body.
+  const payload = JSON.stringify({ event: 'activation', segment_id: job.segment_id, ts: Date.now() });
+  const bodyBytes = Buffer.from(payload, 'utf8');
+  const deliveryId = crypto.randomUUID();
+  // Decrypt secret (fail-closed if missing/invalid)
+  const key = (() => { const k = process.env.WEBHOOK_ENCRYPTION_KEY; return k ? Buffer.from(k, 'utf8') : null; })();
+  if (!key || key.length !== 32) { await pg.query('UPDATE activation_requests SET status=$1 WHERE id=$2', ['failed', job.id]); return; }
+  // Load destination (already validated above)
+  const secRes = await pg.query('SELECT signing_secret_encrypted FROM webhook_destinations WHERE id=$1', [job.destination_id]);
+  if (!secRes.rows[0]) return;
+  const secret = decryptSecret(secRes.rows[0].signing_secret_encrypted, key);
+  const ts = Date.now();
+  const sig = signPayload(payload, secret, deliveryId, ts);
+  const result = await deliverWebhook(destRes.rows[0].url, bodyBytes, {
+    'X-CDP-Delivery-Id': deliveryId,
+    'X-CDP-Signature': sig,
+    'Content-Type': 'application/json',
+  }, 10000);
+  // Persist attempt (not falsely delivered)
+  await pg.query(`INSERT INTO delivery_attempts
+    (activation_request_id, job_id, attempt_number, delivery_id, profile_id, status, http_status, error_reason, attempted_at)
+    VALUES ($1,$2,1,$3,$4,$5,$6,$7,NOW())`,
+    [job.id, job.id, deliveryId, job.profile_id||null,
+     result.ok ? (result.status||200) : 'pending', // simplified status record
+     result.status || null, result.error || null]);
+  if (result.ok && result.status && result.status < 400) {
+    await pg.query('UPDATE activation_requests SET status=$1, completed_at=NOW(), updated_at=NOW() WHERE id=$2', ['delivered', job.id]);
+  } else {
+    await pg.query('UPDATE activation_requests SET status=$1, updated_at=NOW() WHERE id=$2', ['retrying', job.id]);
+  }
 }
 
 import crypto from 'crypto';
