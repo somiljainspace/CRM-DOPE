@@ -1,134 +1,202 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import Head from 'next/head';
-import { apiFetch, RetentionResponse } from '../lib/api';
-import { dateRange } from '../lib/dates';
+import React, { useState, useEffect } from 'react';
+import AppShell from '../components/layout/AppShell';
+import { apiFetch, RetentionResponse, RetentionRow } from '../lib/api';
+import { useWorkspace } from '../lib/workspace';
+import { Loader2 } from 'lucide-react';
 
-export default function RetentionPage() {
-  const [workspaceId, setWorkspaceId] = useState('me');
-  const [range, setRange] = useState<'7d' | '30d'>('30d');
-  const [entryEvent, setEntryEvent] = useState('page_viewed');
+export default function Retention() {
+  const { workspace } = useWorkspace();
+  const [entryEvent, setEntryEvent] = useState('signup_completed');
   const [returningEvent, setReturningEvent] = useState('page_viewed');
-  const [rows, setRows] = useState<{ cohort_date: string; day_offset: number; users_count: number }[]>([]);
+  const [retentionData, setRetentionData] = useState<RetentionRow[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
+  const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr('');
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
+  const fetchRetention = async () => {
+    if (!workspace) return;
+    if (!entryEvent.trim() || !returningEvent.trim()) {
+      setError('Both entry and returning events are required.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
     try {
-      const r = dateRange(range);
       const res = await apiFetch<RetentionResponse>('v1/control/analytics/retention', {
         method: 'POST',
-        query: { workspaceId },
-        body: { startDate: r.startDate, endDate: r.endDate, entryEvent, returningEvent },
-        signal: abortRef.current.signal,
+        query: { workspaceId: workspace.id },
+        body: {
+          startDate,
+          endDate,
+          entryEvent: entryEvent.trim(),
+          returningEvent: returningEvent.trim()
+        }
       });
-      setRows(res.retention || []);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      setErr((e as any)?.message || 'Failed to load retention');
+      setRetentionData(res.retention || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load retention');
+      setRetentionData(null);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, range, entryEvent, returningEvent]);
+  };
 
-  useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load]);
+  useEffect(() => {
+    if (workspace) {
+      fetchRetention();
+    }
+  }, [workspace]);
 
-  // Build matrix groups by cohort_date.
-  const groups: Record<string, { day_offset: number; users_count: number }[]> = {};
-  rows.forEach((r) => {
-    if (!groups[r.cohort_date]) groups[r.cohort_date] = [];
-    groups[r.cohort_date].push({ day_offset: r.day_offset, users_count: r.users_count });
-  });
-  const dates = Object.keys(groups).sort();
-  const maxDay = Math.max(0, ...Object.values(groups).flatMap((arr) => arr.map((a) => a.day_offset)));
+  // Build a 2D grid of cohorts: { cohortDate: { offset: count } }
+  const cohortMap: Record<string, Record<number, number>> = {};
+  let maxOffset = 0;
+  const cohortDates: string[] = [];
+
+  if (retentionData) {
+    retentionData.forEach(row => {
+      const dateKey = row.cohort_date.split('T')[0];
+      if (!cohortMap[dateKey]) {
+        cohortMap[dateKey] = {};
+        cohortDates.push(dateKey);
+      }
+      cohortMap[dateKey][row.day_offset] = row.users_count;
+      maxOffset = Math.max(maxOffset, row.day_offset);
+    });
+    cohortDates.sort();
+  }
+
+  const getRetentionPct = (cohort: string, offset: number) => {
+    if (!cohortMap[cohort] || cohortMap[cohort][offset] === undefined) return null;
+    const initial = cohortMap[cohort][0] || 0;
+    if (initial === 0) return 0;
+    return Math.round((cohortMap[cohort][offset] / initial) * 100);
+  };
 
   return (
-    <>
-      <Head><title>Retention — CRM-DOPE</title></Head>
-      <main className="max-w-6xl mx-auto px-6 py-8" style={{ fontFamily: 'var(--font-sans)' }}>
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Retention Explorer</h1>
-          <p className="text-sm text-ink-muted mt-1">Daily cohorts by entry event. Retention % = returning users / cohort size.</p>
-        </header>
+    <AppShell title="Retention" breadcrumb={['Analytics', 'Retention']}>
+      <div className="p-6 md:p-8 max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <h1 className="text-2xl font-extrabold tracking-tight">Retention Analysis</h1>
+        </div>
 
-        <section aria-label="Retention filters" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-          <div>
-            <label htmlFor="ws" className="block text-xs font-medium text-ink-soft mb-1">Workspace</label>
-            <input id="ws" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Workspace ID" />
+        {/* Controls */}
+        <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-5 shadow-lg mb-8 grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-1">
+            <label className="text-xs uppercase tracking-wider font-semibold text-[#5f6a7a] mb-1.5 block">Entry Event</label>
+            <input
+              value={entryEvent}
+              onChange={(e) => setEntryEvent(e.target.value)}
+              placeholder="e.g. signup_completed"
+              className="w-full bg-[#0a0d13] border border-[#22283a] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40 focus:border-[#6366f1] text-[#e9edf3] placeholder-[#556374] transition-all font-mono"
+            />
           </div>
-          <div>
-            <label htmlFor="r" className="block text-xs font-medium text-ink-soft mb-1">Range</label>
-            <select id="r" value={range} onChange={(e) => setRange(e.target.value as '7d' | '30d')} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </select>
+          <div className="md:col-span-1">
+            <label className="text-xs uppercase tracking-wider font-semibold text-[#5f6a7a] mb-1.5 block">Returning Event</label>
+            <input
+              value={returningEvent}
+              onChange={(e) => setReturningEvent(e.target.value)}
+              placeholder="e.g. page_viewed"
+              className="w-full bg-[#0a0d13] border border-[#22283a] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40 focus:border-[#6366f1] text-[#e9edf3] placeholder-[#556374] transition-all font-mono"
+            />
           </div>
-          <div>
-            <label htmlFor="entry" className="block text-xs font-medium text-ink-soft mb-1">Entry event</label>
-            <input id="entry" value={entryEvent} onChange={(e) => setEntryEvent(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Event name" />
+          <div className="flex items-end">
+            <button
+              onClick={fetchRetention}
+              disabled={loading}
+              className="w-full md:w-auto bg-[#6366f1] hover:bg-[#4f46e5] text-white font-medium py-2 px-5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading ? <Loader2 size={16} className="animate-spin" /> : null}
+              <span>Analyze</span>
+            </button>
           </div>
-          <div>
-            <label htmlFor="ret" className="block text-xs font-medium text-ink-soft mb-1">Returning event</label>
-            <input id="ret" value={returningEvent} onChange={(e) => setReturningEvent(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Event name" />
-          </div>
-          <button onClick={load} disabled={loading} className="rounded-lg bg-ink-strong text-white text-sm font-medium px-4 py-2 hover:bg-ink-soft transition disabled:opacity-50">Apply</button>
-        </section>
+        </div>
 
-        {err && <div role="alert" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 border border-red-100">{err}</div>}
-
-        <aside className="rounded-2xl bg-ink-divider/50 border border-ink-divider p-4 text-xs text-ink-soft mb-6 leading-relaxed" aria-label="Retention definition">
-          <h2 className="text-sm font-semibold text-ink mb-1">How retention is defined</h2>
-          <p>A cohort = users whose first event in the range matched the entry event, grouped by date (cohort_date). A user is counted as retained on day N if they performed the returning event on cohort_date + N. Because identity reconciliation has limits (historical anonymous events before login keep their anonymous key), cohort counts reflect reconstructed keys, not guaranteed unique people. Do not quote retention percentages as exact population-level retention.</p>
-        </aside>
-
-        {loading ? <p className="text-sm text-ink-muted">Loading retention matrix…</p> : rows.length === 0 ? (
-          <p className="text-sm text-ink-muted" role="region" aria-label="Empty retention">No retention data for the selected events. Try widening the range or changing the entry/returning events.</p>
-        ) : (
-          <section aria-label="Retention matrix" className="overflow-x-auto rounded-2xl bg-canvas border border-ink-divider shadow-sm">
-            <table className="w-full text-sm" aria-label="Retention table">
-              <thead>
-                <tr className="text-xs font-semibold text-ink-muted border-b border-ink-divider bg-paper">
-                  <th className="py-2 px-3 text-left">Cohort date (UTC)</th>
-                  <th className="py-2 px-3 text-left">Cohort size</th>
-                  {Array.from({ length: Math.min(maxDay + 1, 8) }, (_, d) => (
-                    <th key={d} className="py-2 px-2 text-center">Day {d}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dates.map((d) => {
-                  const map = new Map<number, number>();
-                  groups[d].forEach((item) => map.set(item.day_offset, item.users_count));
-                  const cohortSize = map.get(0) || 0;
-                  return (
-                    <tr key={d} className="border-b border-ink-divider/50 hover:bg-paper">
-                      <td className="py-2 px-3 font-mono text-xs text-ink-soft">{d}</td>
-                      <td className="py-2 px-3 text-xs text-ink font-medium">{cohortSize.toLocaleString()}</td>
-                      {Array.from({ length: Math.min(maxDay + 1, 8) }, (_, day) => {
-                        const users = map.get(day) || 0;
-                        const pct = cohortSize > 0 ? ((users / cohortSize) * 100).toFixed(0) : '0';
-                        return (
-                          <td key={day} className="py-2 px-2 text-center text-xs">
-                            <span className={`inline-block rounded-md px-2 py-0.5 ${pct === '100' ? 'bg-em-soft text-em font-medium' : pct === '0' ? 'text-ink-muted' : 'text-ink-soft'}`} aria-label={`Day ${day}: ${users} users (${pct}%)`}>
-                              {pct}%
-                            </span>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-                {dates.length === 0 && (
-                  <tr><td colSpan={10} className="py-6 text-sm text-ink-muted">No cohorts found.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </section>
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
         )}
-      </main>
-    </>
+
+        {/* Cohort Table */}
+        <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-6 shadow-lg overflow-hidden">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-sm font-semibold text-[#e9edf3]">Cohort Retention Matrix</h2>
+            <span className="text-xs text-[#5f6a7a]">% of users returning in subsequent days</span>
+          </div>
+
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-24 text-[#556374]">
+              <Loader2 size={32} className="animate-spin mb-4 text-[#6366f1]" />
+              <p className="text-sm">Computing cohort retention...</p>
+            </div>
+          ) : !retentionData ? (
+            <div className="flex flex-col items-center justify-center py-24 text-[#556374]">
+              <p className="text-sm">Run the analysis to view cohort retention.</p>
+            </div>
+          ) : retentionData.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-[#556374]">
+              <p className="text-sm">No retention data for these events in the selected time range.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="text-[#5f6a7a] text-xs uppercase tracking-wider">
+                    <th className="text-left py-3 pr-4 font-semibold sticky left-0 bg-[#121620] z-10">Cohort</th>
+                    <th className="text-right py-3 px-2 font-semibold">Users</th>
+                    {Array.from({ length: maxOffset + 1 }).map((_, i) => (
+                      <th key={i} className="text-right py-3 px-2 font-semibold min-w-[52px]">
+                        {i === 0 ? 'Day 0' : `+${i}`}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#22283a]">
+                  {cohortDates.map(cohort => {
+                    const initialUsers = cohortMap[cohort][0] || 0;
+                    return (
+                      <tr key={cohort} className="hover:bg-[#171b27]/40 transition-colors">
+                        <td className="py-2.5 pr-4 font-medium text-[#e9edf3] sticky left-0 bg-[#121620] z-10 whitespace-nowrap">
+                          {cohort}
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-[#949dac]">
+                          {initialUsers.toLocaleString()}
+                        </td>
+                        {Array.from({ length: maxOffset + 1 }).map((_, offset) => {
+                          const pct = getRetentionPct(cohort, offset);
+                          if (pct === null) {
+                            return <td key={offset} className="py-2.5 px-2 text-center text-[#22283a]">—</td>;
+                          }
+
+                          // Heat coloring: 0% = transparent, 100% = vivid indigo
+                          const intensity = pct / 100;
+                          const bgColor = pct === 100 ? 'bg-[#6366f1]'
+                            : intensity > 0.6 ? 'bg-[#4f46e5]/80'
+                            : intensity > 0.3 ? 'bg-[#4f46e5]/50'
+                            : intensity > 0 ? 'bg-[#4f46e5]/25'
+                            : 'bg-[#22283a]/40';
+
+                          return (
+                            <td key={offset} className="py-2.5 px-2 text-right">
+                              <div className={`inline-block px-2.5 py-1 rounded-md text-xs font-semibold ${bgColor} ${pct > 0 ? 'text-white' : 'text-[#556374]'}`}>
+                                {pct}%
+                              </div>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </AppShell>
   );
 }

@@ -1,154 +1,130 @@
-import { useEffect, useRef, useState, useCallback, Fragment } from 'react';
-import Head from 'next/head';
-import { apiFetch, ExplorerEvent, EventsResponse } from '../lib/api';
-import { RangeKey, dateRange } from '../lib/dates';
+import React, { useState, useEffect } from 'react';
+import AppShell from '../components/layout/AppShell';
+import { apiFetch, EventsResponse, ExplorerEvent } from '../lib/api';
+import { useWorkspace } from '../lib/workspace';
+import { Search, Loader2, Database, Clock, Fingerprint } from 'lucide-react';
 
-export default function EventExplorerPage() {
-  const [workspaceId, setWorkspaceId] = useState('me');
-  const [range, setRange] = useState<RangeKey>('7d');
-  const [eventName, setEventName] = useState('');
-  const [page, setPage] = useState(0);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+export default function Events() {
+  const { workspace } = useWorkspace();
+  const [events, setEvents] = useState<ExplorerEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState('');
 
-  const [data, setData] = useState<EventsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    if (!workspace) return;
 
-  const limit = 25;
+    const delayDebounceFn = setTimeout(() => {
+      setLoading(true);
+      setError('');
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr('');
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    try {
-      const r = dateRange(range);
-      const res = await apiFetch<EventsResponse>('v1/control/analytics/events', {
-        query: { workspaceId, startDate: r.startDate, endDate: r.endDate, eventName: eventName || undefined, limit, offset: page * limit },
-        signal: abortRef.current.signal,
-      });
-      setData(res);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      setErr((e as any)?.message || 'Failed to load events');
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, range, eventName, page]);
+      const endDate = new Date().toISOString();
+      const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load]);
+      const query: Record<string, any> = { workspaceId: workspace.id, startDate, endDate, limit: 50 };
+      if (searchTerm.trim()) query.eventName = searchTerm.trim();
 
-  const toggleRow = (id: string) => {
-    const next = new Set(expanded);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setExpanded(next);
-  };
+      apiFetch<EventsResponse>('v1/control/analytics/events', { query })
+        .then(res => {
+          setEvents(res.events || []);
+          setLoading(false);
+        })
+        .catch(err => {
+          setError(err.message || 'Failed to load events');
+          setLoading(false);
+        });
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [workspace, searchTerm]);
 
   return (
-    <>
-      <Head><title>Event Explorer — CRM-DOPE</title></Head>
-      <main className="max-w-6xl mx-auto px-6 py-8" style={{ fontFamily: 'var(--font-sans)' }}>
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Event Explorer</h1>
-          <p className="text-sm text-ink-muted mt-1">Raw events ordered by timestamp. Uses replacing merge tree (events may take seconds to dedup).</p>
-        </header>
-
-        <section aria-label="Event filters" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-          <div>
-            <label htmlFor="ws" className="block text-xs font-medium text-ink-soft mb-1">Workspace</label>
-            <input id="ws" value={workspaceId} onChange={(e) => { setWorkspaceId(e.target.value); setPage(0); }} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Workspace ID" />
+    <AppShell title="Event Explorer" breadcrumb={['Analytics', 'Events']}>
+      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <h1 className="text-2xl font-extrabold tracking-tight">Event Explorer</h1>
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-2.5 text-[#5f6a7a]" />
+            <input
+              placeholder="Search by event name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-[#121620] border border-[#22283a] rounded-xl pl-9 pr-4 py-2 text-sm w-full sm:w-72 focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40 focus:border-[#6366f1] text-[#e9edf3] placeholder-[#5f6a7a] transition-all"
+            />
           </div>
-          <div>
-            <label htmlFor="r" className="block text-xs font-medium text-ink-soft mb-1">Range</label>
-            <select id="r" value={range} onChange={(e) => { setRange(e.target.value as RangeKey); setPage(0); }} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-              <option value="14d">Last 14 days</option>
-              <option value="30d">Last 30 days</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="ev" className="block text-xs font-medium text-ink-soft mb-1">Event name (optional)</label>
-            <input id="ev" value={eventName} onChange={(e) => { setEventName(e.target.value); setPage(0); }} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="All events" />
-          </div>
-          <button type="button" onClick={load} className="rounded-lg bg-ink-strong text-white text-sm font-medium px-4 py-2 hover:bg-ink-soft transition disabled:opacity-50" disabled={loading}>Apply</button>
-        </section>
+        </div>
 
-        {err && <div role="alert" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 border border-red-100">{err}</div>}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
 
-        <section aria-label="Event logs" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm overflow-hidden mb-6">
-          <div className="p-4 border-b border-ink-divider flex items-center justify-between bg-paper">
-            <h2 className="text-sm font-semibold text-ink">Events</h2>
-            <div className="flex items-center gap-3 text-xs">
-               <span className="text-ink-muted">Page {page + 1}</span>
-               <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0 || loading} className="px-2 py-1 bg-canvas border border-ink-subtle rounded disabled:opacity-50 text-ink-soft hover:border-ink-soft">Prev</button>
-               <button onClick={() => setPage(page + 1)} disabled={!data || data.events.length < limit || loading} className="px-2 py-1 bg-canvas border border-ink-subtle rounded disabled:opacity-50 text-ink-soft hover:border-ink-soft">Next</button>
+        <div className="bg-[#121620] border border-[#22283a] rounded-2xl overflow-hidden shadow-lg flex flex-col min-h-[400px]">
+          {loading ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-[#556374]">
+              <Loader2 size={24} className="animate-spin mb-3 text-[#6366f1]" />
+              <p className="text-sm">Querying events...</p>
             </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs font-semibold text-ink-muted border-b border-ink-divider bg-canvas">
-                  <th className="py-2.5 pl-6 pr-4 w-8"></th>
-                  <th className="py-2.5 pr-4">Time (UTC)</th>
-                  <th className="py-2.5 pr-4">Event</th>
-                  <th className="py-2.5 pr-4">Identity</th>
-                  <th className="py-2.5 pr-6">Session ID</th>
-                </tr>
-              </thead>
-              <tbody className="bg-canvas">
-                {loading && !data?.events?.length && (
-                  <tr><td colSpan={5} className="py-6 text-center text-ink-muted text-sm">Loading events…</td></tr>
-                )}
-                {!loading && data?.events?.length === 0 && (
-                  <tr><td colSpan={5} className="py-6 text-center text-ink-muted text-sm">No events found. Verify ingestion or adjust filters.</td></tr>
-                )}
-                {data?.events?.map((e) => {
-                  const isExp = expanded.has(e.event_id);
-                  return (
-                    <Fragment key={e.event_id}>
-                      <tr className={`border-b border-ink-divider/50 hover:bg-paper cursor-pointer transition-colors ${isExp ? 'bg-paper' : ''}`} onClick={() => toggleRow(e.event_id)}>
-                        <td className="py-2.5 pl-6 pr-4 text-ink-muted select-none">{isExp ? '▼' : '▶'}</td>
-                        <td className="py-2.5 pr-4 font-mono text-xs text-ink-soft">{new Date(e.timestamp).toISOString().replace('T', ' ').slice(0, 23)}</td>
-                        <td className="py-2.5 pr-4 font-medium text-ink">{e.event_name}</td>
-                        <td className="py-2.5 pr-4 text-xs font-mono text-ink-soft">
-                          {e.user_id ? <span className="text-em">u:{e.user_id.slice(0,8)}</span> : `a:${e.anonymous_id?.slice(0,8) || '-'}`}
-                        </td>
-                        <td className="py-2.5 pr-6 text-xs font-mono text-ink-muted">{e.session_id ? e.session_id.slice(0, 8) : '-'}</td>
-                      </tr>
-                      {isExp && (
-                        <tr className="border-b border-ink-divider bg-ink-divider/30">
-                          <td colSpan={5} className="pl-14 pr-6 py-4">
-                            <div className="grid grid-cols-2 gap-8 text-xs font-mono">
-                              <div>
-                                <h4 className="font-semibold text-ink-soft mb-2 uppercase tracking-wide text-[10px]">Event Properties</h4>
-                                <pre className="text-ink whitespace-pre-wrap word-break bg-canvas p-3 rounded-lg border border-ink-subtle/50">
-                                  {JSON.stringify(e.properties || {}, null, 2)}
-                                </pre>
-                              </div>
-                              <div>
-                                <h4 className="font-semibold text-ink-soft mb-2 uppercase tracking-wide text-[10px]">Record Context</h4>
-                                <ul className="space-y-1 text-ink-muted">
-                                  <li><span className="text-ink-soft">Event ID:</span> {e.event_id}</li>
-                                  <li><span className="text-ink-soft">Type:</span> {e.event_type}</li>
-                                  {e.user_id && <li><span className="text-ink-soft">User ID:</span> {e.user_id}</li>}
-                                  {e.anonymous_id && <li><span className="text-ink-soft">Anon ID:</span> {e.anonymous_id}</li>}
-                                  {e.session_id && <li><span className="text-ink-soft">Session ID:</span> {e.session_id}</li>}
-                                </ul>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </main>
-    </>
+          ) : events.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-[#556374] p-12">
+              <Database size={32} className="mb-4 opacity-50" />
+              <p className="text-sm">No events found in the last 7 days.</p>
+              {searchTerm && <p className="text-xs mt-1">Try clearing your search filter.</p>}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left whitespace-nowrap">
+                <thead className="bg-[#171b27] text-xs uppercase tracking-wider text-[#5f6a7a] border-b border-[#22283a]">
+                  <tr>
+                    <th className="px-5 py-3.5 font-semibold">Event Name</th>
+                    <th className="px-5 py-3.5 font-semibold">User</th>
+                    <th className="px-5 py-3.5 font-semibold">Properties</th>
+                    <th className="px-5 py-3.5 font-semibold text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#22283a]">
+                  {events.map((e) => (
+                    <tr key={e.event_id} className="hover:bg-[#1a2029] transition-colors group">
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-1.5 h-1.5 rounded-full ${e.event_type === 'screen' ? 'bg-[#06b6d4]' : 'bg-[#818cf8]'}`} />
+                          <span className="font-mono text-[13px] bg-[#0a0d13] border border-[#22283a] px-2 py-0.5 rounded-md text-[#e9edf3]">
+                            {e.event_name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2 text-[#949dac]">
+                          <Fingerprint size={14} className="opacity-70" />
+                          <span className="truncate max-w-[150px] font-mono text-xs" title={e.user_id || e.anonymous_id || 'Unknown'}>
+                            {e.user_id ? e.user_id : (e.anonymous_id ? `anon:${e.anonymous_id.substring(0, 8)}...` : 'Unknown')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="text-xs text-[#5f6a7a] font-mono truncate max-w-[200px]">
+                          {e.properties && Object.keys(e.properties).length > 0
+                            ? Object.entries(e.properties).map(([k,v]) => `${k}:${v}`).join(', ')
+                            : '—'}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right text-[#5f6a7a]">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Clock size={12} />
+                          <time dateTime={e.timestamp}>{new Date(e.timestamp).toLocaleString(undefined, {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+                          })}</time>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </AppShell>
   );
 }

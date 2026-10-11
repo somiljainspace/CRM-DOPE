@@ -1,127 +1,129 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import Head from 'next/head';
-import { apiFetch, TrendPoint } from '../lib/api';
-import { RangeKey, dateRange } from '../lib/dates';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import AppShell from '../components/layout/AppShell';
+import { apiFetch, TrendsResponse, TrendPoint } from '../lib/api';
+import { useWorkspace } from '../lib/workspace';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Loader2, Activity } from 'lucide-react';
 
-const EVENT_SUGGESTIONS = ['page_viewed', 'product_viewed', 'item_added_to_cart', 'checkout_started', 'order_completed', 'sign_up', 'search_performed'];
-
-export default function TrendsPage() {
-  const [workspaceId, setWorkspaceId] = useState('me');
-  const [range, setRange] = useState<RangeKey>('7d');
-  const [interval, setInterval] = useState<'hour' | 'day'>('day');
+export default function Trends() {
+  const { workspace } = useWorkspace();
+  const [trends, setTrends] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [interval, setInterval] = useState<'day' | 'hour'>('day');
+  const [error, setError] = useState('');
   const [eventName, setEventName] = useState('');
-  const [trends, setTrends] = useState<TrendPoint[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr('');
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    try {
-      const r = dateRange(range);
-      const data = await apiFetch<{ trends: TrendPoint[] }>('v1/control/analytics/trends', {
-        query: { workspaceId, startDate: r.startDate, endDate: r.endDate, interval, eventName: eventName || undefined },
-        signal: abortRef.current.signal,
+  useEffect(() => {
+    if (!workspace) return;
+
+    setLoading(true);
+    setError('');
+
+    const endDate = new Date().toISOString();
+    // The analytics API supports hourly and daily buckets.
+    const startMs = interval === 'hour' ? 24 * 60 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000;
+
+    const startDate = new Date(Date.now() - startMs).toISOString();
+
+    const query: Record<string, any> = { workspaceId: workspace.id, startDate, endDate, interval };
+    if (eventName.trim()) query.eventName = eventName.trim();
+
+    apiFetch<TrendsResponse>('v1/control/analytics/trends', { query })
+      .then(res => {
+        if (res.trends) {
+          setTrends(res.trends.map((t: TrendPoint) => ({
+            date: new Date(t.time_bucket).toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: interval !== 'day' ? 'numeric' : undefined,
+              minute: interval === 'hour' ? '2-digit' : undefined
+            }),
+            events: t.event_count
+          })));
+        } else {
+          setTrends([]);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message || 'Failed to load trends');
+        setLoading(false);
       });
-      setTrends(data.trends || []);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      setErr((e as any)?.message || 'Failed to load trends');
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, range, interval, eventName]);
 
-  useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load]);
+  }, [workspace, interval, eventName]);
 
   return (
-    <>
-      <Head><title>Event Trends — CRM-DOPE</title></Head>
-      <main className="max-w-6xl mx-auto px-6 py-8" style={{ fontFamily: 'var(--font-sans)' }}>
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Event Trends</h1>
-          <p className="text-sm text-ink-muted mt-1">Bounded queries over first-party events. All timestamps are UTC.</p>
-        </header>
-
-        <section aria-label="Trend filters" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-          <div>
-            <label htmlFor="ws" className="block text-xs font-medium text-ink-soft mb-1">Workspace</label>
-            <input id="ws" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Workspace ID" />
-          </div>
-          <div>
-            <label htmlFor="r" className="block text-xs font-medium text-ink-soft mb-1">Range</label>
-            <select id="r" value={range} onChange={(e) => setRange(e.target.value as RangeKey)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="today">Today</option>
-              <option value="7d">Last 7 days</option>
-              <option value="14d">Last 14 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="i" className="block text-xs font-medium text-ink-soft mb-1">Bucket</label>
-            <select id="i" value={interval} onChange={(e) => setInterval(e.target.value as 'hour' | 'day')} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="hour">Hourly</option>
-              <option value="day">Daily</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="ev" className="block text-xs font-medium text-ink-soft mb-1">Event name (optional)</label>
-            <input id="ev" list="event-suggestions" value={eventName} onChange={(e) => setEventName(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="All events" />
-            <datalist id="event-suggestions">
-              {EVENT_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
-            </datalist>
-          </div>
-          <button type="button" onClick={load} className="rounded-lg bg-ink-strong text-white text-sm font-medium px-4 py-2 hover:bg-ink-soft transition disabled:opacity-50" disabled={loading}>Apply</button>
-        </section>
-
-        {err && <div role="alert" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 border border-red-100">{err}</div>}
-
-        <section aria-label="Trend chart" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-ink mb-4">Trend {eventName ? `· ${eventName}` : '· all events'}</h2>
-          {loading ? <p className="text-sm text-ink-muted">Loading…</p> : trends.length === 0 ? (
-            <p className="text-sm text-ink-muted" role="region" aria-label="Empty trend state">No events match this range and filter. Try a wider range or a different event name.</p>
-          ) : (
-            <div style={{ height: 320 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trends} aria-label="Event trend chart">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => interval === 'hour' ? v.slice(11, 16) : v.slice(5)} tick={{ fill: "#6b7280" }} />
-                  <YAxis tick={{ fill: "#6b7280" }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontFamily: 'var(--font-sans)' }} formatter={(v) => [`${v} events`, "Count"] as [string, string]} />
-                  <Line type="monotone" dataKey="event_count" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 4, fill: '#0ea5e9', stroke: '#fff', strokeWidth: 2 }} name="Events" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </section>
-
-        <section aria-label="Trend data table" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-6 overflow-x-auto">
-          <h2 className="text-lg font-semibold text-ink mb-4">Data table (accessible alternative)</h2>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs font-semibold text-ink-muted border-b border-ink-divider">
-                <th className="py-2 pr-4">Time bucket (UTC)</th>
-                <th className="py-2">Event count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trends.map((t, i) => (
-                <tr key={`${t.time_bucket}-${i}`} className="border-b border-ink-divider last:border-0 hover:bg-paper">
-                  <td className="py-2 pr-4 font-mono text-xs text-ink-soft">{t.time_bucket}{interval === 'hour' ? '' : ' 00:00'}</td>
-                  <td className="py-2 text-ink">{t.event_count}</td>
-                </tr>
+    <AppShell title="Trends" breadcrumb={['Analytics', 'Trends']}>
+      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <h1 className="text-2xl font-extrabold tracking-tight">Event Trends</h1>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              placeholder="Filter by event name (optional)..."
+              value={eventName}
+              onChange={(e) => setEventName(e.target.value)}
+              className="bg-[#121620] border border-[#22283a] rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40 focus:border-[#6366f1] text-[#e9edf3] placeholder-[#5f6a7a] transition-all min-w-[240px]"
+            />
+            <div className="flex p-1 bg-[#121620] border border-[#22283a] rounded-xl self-start">
+              {(['hour', 'day'] as const).map(inv => (
+                <button
+                  key={inv}
+                  onClick={() => setInterval(inv)}
+                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors capitalize ${interval === inv ? 'bg-[#22283a] text-[#e9edf3]' : 'text-[#5f6a7a] hover:text-[#949dac]'}`}
+                >
+                  {inv}
+                </button>
               ))}
-              {trends.length === 0 && (
-                <tr><td colSpan={2} className="py-4 text-ink-muted text-sm">No data in the selected range.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </section>
-      </main>
-    </>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-6 shadow-lg h-[500px] flex flex-col">
+          <div className="text-sm font-semibold mb-6 flex items-center justify-between">
+            <span className="text-[#e9edf3]">Event volume over time ({interval === 'day' ? 'Last 30 Days' : 'Last 24 Hours'})</span>
+            {eventName && <span className="text-xs bg-[#22283a] text-[#e9edf3] px-2 py-1 rounded font-mono border border-[#444c68]">event: {eventName}</span>}
+          </div>
+
+          <div className="flex-1 min-h-0 relative">
+            {loading ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374]">
+                <Loader2 size={32} className="animate-spin mb-4 text-[#6366f1]" />
+                <p className="text-sm">Calculating trends...</p>
+              </div>
+            ) : trends.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374] bg-[#0a0d13] border border-dashed border-[#22283a] rounded-xl mt-4 max-h-[80%] my-auto">
+                <Activity size={32} className="mb-4 opacity-50" />
+                <p className="text-sm">No trend data available for this selection.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorTrends" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#818cf8" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#818cf8" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#22283a" />
+                  <XAxis dataKey="date" stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} dy={10} minTickGap={30} />
+                  <YAxis stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#141921', borderColor: '#22283a', borderRadius: '12px', color: '#e9edf3', fontSize: '13px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}
+                    itemStyle={{ color: '#8b5cf6', fontWeight: 600 }}
+                  />
+                  <Area type="monotone" dataKey="events" name="events" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorTrends)" activeDot={{ r: 6, fill: '#8b5cf6', stroke: '#121620', strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+    </AppShell>
   );
 }

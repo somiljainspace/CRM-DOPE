@@ -1,124 +1,150 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import Head from 'next/head';
-import { apiFetch, ActiveUserPoint } from '../lib/api';
-import { RangeKey, dateRange } from '../lib/dates';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import React, { useState, useEffect } from 'react';
+import AppShell from '../components/layout/AppShell';
+import { apiFetch, ActiveUsersResponse, ActiveUserPoint } from '../lib/api';
+import { useWorkspace } from '../lib/workspace';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Loader2, Users, UserCheck, UserPlus } from 'lucide-react';
 
-export default function ActiveUsersPage() {
-  const [workspaceId, setWorkspaceId] = useState('me');
-  const [range, setRange] = useState<RangeKey>('30d');
+export default function ActiveUsers() {
+  const { workspace } = useWorkspace();
+  const [activeData, setActiveData] = useState<any[]>([]);
+  const [dau, setDau] = useState<number | null>(null);
+  const [wau, setWau] = useState<number | null>(null);
+  const [mau, setMau] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('day');
-  const [series, setSeries] = useState<ActiveUserPoint[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
-  const abortRef = useRef<AbortController | null>(null);
+  const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr('');
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    try {
-      const r = dateRange(range);
-      const data = await apiFetch<{ activeUsers: ActiveUserPoint[] }>('v1/control/analytics/active-users', {
-        query: { workspaceId, startDate: r.startDate, endDate: r.endDate, period },
-        signal: abortRef.current.signal,
+  useEffect(() => {
+    if (!workspace) return;
+
+    setLoading(true);
+    setError('');
+
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const query = { workspaceId: workspace.id, startDate, endDate, period };
+
+    apiFetch<ActiveUsersResponse>('v1/control/analytics/active-users', { query })
+      .then(res => {
+        const points = res.activeUsers || [];
+
+        if (points.length > 0) {
+          const last = points[points.length - 1];
+          setDau(last.unique_users);
+        } else {
+          setDau(0);
+        }
+
+        // WAU/MAU approximation: max over the 7-day / 30-day rolling window from response
+        const weekPoints = points.slice(-7);
+        const monthPoints = points.slice(-30);
+        setWau(weekPoints.length > 0 ? Math.max(...weekPoints.map(p => p.unique_users)) : null);
+        setMau(monthPoints.length > 0 ? Math.max(...monthPoints.map(p => p.unique_users)) : null);
+
+        setActiveData(points.map(p => ({
+          date: new Date(p.time_bucket).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          users: p.unique_users
+        })));
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message || 'Failed to load active users');
+        setLoading(false);
       });
-      setSeries(data.activeUsers || []);
-    } catch (e: unknown) {
-      if ((e as any)?.name === 'AbortError') return;
-      setErr((e as any)?.message || 'Failed to load active users');
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId, range, period]);
+  }, [workspace, period]);
 
-  useEffect(() => { load(); return () => abortRef.current?.abort(); }, [load]);
-
-  const latest = series.length ? series[series.length - 1].unique_users : 0;
+  const formatVal = (val: number | null) => val === null ? '—' : val.toLocaleString();
 
   return (
-    <>
-      <Head><title>Active Users — CRM-DOPE</title></Head>
-      <main className="max-w-6xl mx-auto px-6 py-8" style={{ fontFamily: 'var(--font-sans)' }}>
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Active Users</h1>
-          <p className="text-sm text-ink-muted mt-1">
-            Counts distinct <code className="font-mono text-xs bg-ink-divider px-1.5 py-0.5 rounded">COALESCE(user_id, anonymous_id)</code> keys — not verified people.
-          </p>
-        </header>
-
-        <section aria-label="Active user filters" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-4 mb-6 flex flex-wrap gap-3 items-end">
-          <div>
-            <label htmlFor="ws" className="block text-xs font-medium text-ink-soft mb-1">Workspace</label>
-            <input id="ws" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Workspace ID" />
+    <AppShell title="Active Users" breadcrumb={['Analytics', 'Active Users']}>
+      <div className="p-6 md:p-8 max-w-6xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <h1 className="text-2xl font-extrabold tracking-tight">Active Users</h1>
+          <div className="flex p-1 bg-[#121620] border border-[#22283a] rounded-xl self-start">
+            {(['day', 'week', 'month'] as const).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1 text-xs font-semibold rounded-lg transition-colors capitalize ${period === p ? 'bg-[#22283a] text-[#e9edf3]' : 'text-[#5f6a7a] hover:text-[#949dac]'}`}
+              >
+                {p}
+              </button>
+            ))}
           </div>
-          <div>
-            <label htmlFor="r" className="block text-xs font-medium text-ink-soft mb-1">Range</label>
-            <select id="r" value={range} onChange={(e) => setRange(e.target.value as RangeKey)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="7d">Last 7 days</option>
-              <option value="14d">Last 14 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="p" className="block text-xs font-medium text-ink-soft mb-1">Period</label>
-            <select id="p" value={period} onChange={(e) => setPeriod(e.target.value as 'day' | 'week' | 'month')} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-              <option value="day">Daily (DAU)</option>
-              <option value="week">Weekly (WAU)</option>
-              <option value="month">Monthly (MAU)</option>
-            </select>
-          </div>
-          <button type="button" onClick={load} className="rounded-lg bg-ink-strong text-white text-sm font-medium px-4 py-2 hover:bg-ink-soft transition disabled:opacity-50" disabled={loading}>Apply</button>
-        </section>
+        </div>
 
-        {err && <div role="alert" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 border border-red-100">{err}</div>}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+          </div>
+        )}
 
-        <section aria-label="Active user summary" className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
           {[
-            { label: `Latest ${period === 'day' ? 'DAU' : period === 'week' ? 'WAU' : 'MAU'}`, value: latest, sub: `Most recent ${period} bucket` },
-            { label: 'Buckets', value: series.length, sub: 'Data points' },
-            { label: 'Max in period', value: series.reduce((m, p) => Math.max(m, p.unique_users), 0), sub: 'Peak bucket' },
-            { label: 'Min in period', value: series.reduce((m, p) => (m === 0 ? p.unique_users : Math.min(m, p.unique_users)), 0), sub: 'Lowest bucket' },
-          ].map((m) => (
-            <article key={m.label} className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-5" aria-label={m.label}>
-              <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wider">{m.label}</h3>
-              <p className="text-3xl font-bold text-ink mt-2">{m.value}</p>
-              <p className="text-xs text-ink-muted mt-1">{m.sub}</p>
-            </article>
-          ))}
-        </section>
-
-        <section aria-label="Active user chart" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold text-ink mb-4">
-            {period === 'day' ? 'Daily' : period === 'week' ? 'Weekly' : 'Monthly'} active users
-          </h2>
-          {loading ? <p className="text-sm text-ink-muted">Loading…</p> : series.length === 0 ? (
-            <p className="text-sm text-ink-muted" role="region" aria-label="Empty state">No active users in range. Events may not be flowing yet — connect the Browser SDK.</p>
-          ) : (
-            <div style={{ height: 320 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={series} aria-label="Active users chart">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis dataKey="time_bucket" tickFormatter={(v: string) => v.slice(5)} tick={{ fill: "#6b7280" }} />
-                  <YAxis tick={{ fill: "#6b7280" }} allowDecimals={false} />
-                  <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', fontFamily: 'var(--font-sans)' }} formatter={(v) => [`${v} identities`, "Active"] as [string, string]} />
-                  <Line type="monotone" dataKey="unique_users" stroke="#0ea5e9" strokeWidth={2.5} dot={{ r: 4, fill: '#0ea5e9', stroke: '#fff', strokeWidth: 2 }} name="Active identities" />
-                </LineChart>
-              </ResponsiveContainer>
+            { label: 'Daily Active Users', value: formatVal(dau), icon: Users, color: 'from-[#6366f1] to-[#818cf8]' },
+            { label: 'Weekly Active Users', value: formatVal(wau), icon: UserCheck, color: 'from-[#8b5cf6] to-[#a78bfa]' },
+            { label: 'Monthly Active Users', value: formatVal(mau), icon: UserPlus, color: 'from-[#06b6d4] to-[#22d3ee]' },
+          ].map((m, i) => (
+            <div key={m.label} className="bg-[#121620] border border-[#22283a] rounded-2xl p-5 shadow-lg relative overflow-hidden group">
+              <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${m.color} opacity-5 rounded-full blur-2xl transform group-hover:scale-150 transition-transform duration-500`} />
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 rounded-lg bg-[#171b27] text-[#949dac]">
+                  <m.icon size={16} />
+                </div>
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6a7a]">{m.label}</div>
+              </div>
+              <div className="text-3xl font-extrabold tracking-tight text-[#e9edf3]">
+                {loading ? <div className="h-9 w-20 bg-[#171b27] animate-pulse rounded" /> : m.value}
+              </div>
             </div>
-          )}
-        </section>
+          ))}
+        </div>
 
-        <aside className="rounded-2xl bg-ink-divider/50 border border-ink-divider p-4 text-sm text-ink-soft" aria-label="Identity semantics note">
-          <h2 className="text-sm font-semibold text-ink mb-1">How this is counted</h2>
-          <p className="text-xs leading-relaxed text-ink-muted">
-            Active users = distinct <code className="font-mono">COALESCE(user_id, anonymous_id)</code> per bucket.
-            This counts unique device/identity keys, not verified people: one person on two devices counts twice,
-            and events sent before a user signs in keep their anonymous key. Do not quote these numbers as exact unique-person counts.
-          </p>
-        </aside>
-      </main>
-    </>
+        <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-6 shadow-lg h-[400px] flex flex-col">
+          <div className="text-sm font-semibold mb-6 flex items-center justify-between">
+            <span className="text-[#e9edf3]">Active users over time ({period === 'day' ? 'Last 30 Days (DAU)' : period === 'week' ? 'Last 4 Weeks (WAU)' : 'Last 12 Months (MAU)'})</span>
+            <span className="flex items-center gap-1.5 text-xs text-[#949dac]">
+              <div className="w-2 h-2 rounded-full bg-[#6366f1]" />
+              Unique users
+            </span>
+          </div>
+
+          <div className="flex-1 min-h-0 relative">
+            {loading ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374]">
+                <Loader2 size={32} className="animate-spin mb-4 text-[#6366f1]" />
+                <p className="text-sm">Loading user activity...</p>
+              </div>
+            ) : activeData.length === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374] bg-[#0a0d13] border border-dashed border-[#22283a] rounded-xl">
+                <Users size={32} className="mb-4 opacity-50" />
+                <p className="text-sm">No active user data in this workspace.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={activeData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#22283a" />
+                  <XAxis dataKey="date" stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} dy={10} minTickGap={30} />
+                  <YAxis stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#141921', borderColor: '#22283a', borderRadius: '12px', color: '#e9edf3', fontSize: '13px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}
+                    itemStyle={{ color: '#818cf8', fontWeight: 600 }}
+                  />
+                  <Area type="monotone" dataKey="users" name="Active users" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorUsers)" activeDot={{ r: 6, fill: '#818cf8', stroke: '#121620', strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+    </AppShell>
   );
 }

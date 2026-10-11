@@ -1,153 +1,222 @@
-import React, { useState } from 'react';
-import Head from 'next/head';
+import React, { useState, useEffect } from 'react';
+import AppShell from '../components/layout/AppShell';
 import { apiFetch, FunnelResponse, FunnelStepResult } from '../lib/api';
-import { dateRange } from '../lib/dates';
+import { useWorkspace } from '../lib/workspace';
+import { Loader2, Plus, X, BarChart, ArrowRight } from 'lucide-react';
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-const STEP_SUGGESTIONS = ['page_viewed', 'product_viewed', 'item_added_to_cart', 'checkout_started', 'order_completed', 'sign_up'];
-
-function computeFunnel(funnel: FunnelStepResult[]) {
-  const max = funnel.length ? funnel[0].count : 0;
-  return funnel.map((step, i) => {
-    const prev = i > 0 ? funnel[i - 1].count : null;
-    const rate = max > 0 ? (step.count / max) * 100 : 0;
-    const dropOff = prev !== null ? Math.max(0, prev - step.count) : max - step.count;
-    const dropOffRate = prev !== null && prev > 0 ? ((prev - step.count) / prev) * 100 : 0;
-    return { ...step, rate, dropOff, dropOffRate, conversionFromFirst: rate };
-  });
-}
-
-export default function FunnelPage() {
-  const [workspaceId, setWorkspaceId] = useState('me');
-  const [range, setRange] = useState<'7d' | '14d' | '30d'>('30d');
-  const [steps, setSteps] = useState<string[]>(['page_viewed', 'item_added_to_cart', 'checkout_started', 'order_completed']);
-  const [funnel, setFunnel] = useState<FunnelResponse | null>(null);
+export default function Funnels() {
+  const { workspace } = useWorkspace();
+  const [steps, setSteps] = useState<string[]>(['page_viewed', 'signup_completed']);
+  const [funnelData, setFunnelData] = useState<FunnelStepResult[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState('');
+  const [error, setError] = useState('');
 
-  const updateStep = (i: number, v: string) => {
-    const next = [...steps];
-    next[i] = v;
-    setSteps(next);
-  };
-
-  const addStep = () => { if (steps.length < 5) setSteps([...steps, '']); };
-  const removeStep = (i: number) => { if (steps.length > 2) setSteps(steps.filter((_, idx) => idx !== i)); };
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true); setErr('');
-    const clean = steps.filter(Boolean);
-    if (clean.length < 2 || clean.length > 5) {
-      setErr('Funnels must have between 2 and 5 ordered steps.');
-      setLoading(false);
+  const fetchFunnel = async () => {
+    if (!workspace) return;
+    if (steps.length < 2) {
+      setError('A funnel requires at least 2 steps');
       return;
     }
-    const r = dateRange(range);
+    const cleanSteps = steps.map(s => s.trim()).filter(Boolean);
+    if (cleanSteps.length < 2) {
+      setError('Please provide valid event names for all steps');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
     try {
       const res = await apiFetch<FunnelResponse>('v1/control/analytics/funnels', {
         method: 'POST',
-        query: { workspaceId },
-        body: { startDate: r.startDate, endDate: r.endDate, steps: clean },
+        query: { workspaceId: workspace.id },
+        body: {
+          startDate,
+          endDate,
+          steps: cleanSteps
+        }
       });
-      setFunnel(res);
-    } catch (e: unknown) {
-      setErr((e as any)?.message || 'Failed to compute funnel');
+      setFunnelData(res.funnel || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to calculate funnel');
+      setFunnelData(null);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  const computed = funnel ? computeFunnel(funnel.funnel) : null;
+  // Fetch when workspace changes if we have valid steps
+  useEffect(() => {
+    if (workspace && steps.filter(Boolean).length >= 2) {
+      fetchFunnel();
+    }
+  }, [workspace]);
+
+  const updateStep = (idx: number, val: string) => {
+    const next = [...steps];
+    next[idx] = val;
+    setSteps(next);
+  };
+
+  const removeStep = (idx: number) => {
+    setSteps(steps.filter((_, i) => i !== idx));
+  };
+
+  const addStep = () => {
+    if (steps.length >= 5) return;
+    setSteps([...steps, '']);
+  };
+
+  const chartData = funnelData?.map((step, idx) => {
+    const isFirst = idx === 0;
+    const conversion = isFirst ? 100 : (funnelData[0].count > 0 ? (step.count / funnelData[0].count) * 100 : 0);
+    const dropoff = idx > 0 ? (100 - conversion) : 0;
+
+    return {
+      name: steps[idx] || `Step ${idx + 1}`,
+      count: step.count,
+      conversion: Number(conversion.toFixed(1)),
+      dropoff: Number(dropoff.toFixed(1))
+    };
+  }) || [];
 
   return (
-    <>
-      <Head><title>Funnel Explorer — CRM-DOPE</title></Head>
-      <main className="max-w-6xl mx-auto px-6 py-8" style={{ fontFamily: 'var(--font-sans)' }}>
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Funnel Explorer</h1>
-          <p className="text-sm text-ink-muted mt-1">Ordered conversion steps. Conversion window: 7 days (604800 seconds).</p>
-        </header>
+    <AppShell title="Funnels" breadcrumb={['Analytics', 'Funnels']}>
+      <div className="p-6 md:p-8 max-w-6xl mx-auto grid lg:grid-cols-12 gap-8">
 
-        <form onSubmit={submit} aria-label="Funnel builder" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-6 mb-6 space-y-4">
-          <div className="flex flex-wrap gap-3 items-end">
-            <div>
-              <label htmlFor="ws" className="block text-xs font-medium text-ink-soft mb-1">Workspace</label>
-              <input id="ws" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em" placeholder="Workspace ID" />
-            </div>
-            <div>
-              <label htmlFor="r" className="block text-xs font-medium text-ink-soft mb-1">Range</label>
-              <select id="r" value={range} onChange={(e) => setRange(e.target.value as '7d' | '14d' | '30d')} className="rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em">
-                <option value="7d">Last 7 days</option>
-                <option value="14d">Last 14 days</option>
-                <option value="30d">Last 30 days</option>
-              </select>
-            </div>
+        {/* Left Col: Builder */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-extrabold tracking-tight">Funnels</h1>
           </div>
 
-          <div>
-            <h3 className="text-sm font-semibold text-ink mb-2">Steps ({steps.length}/5)</h3>
-            <div className="space-y-2">
+          <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-5 shadow-lg">
+            <h2 className="text-sm font-semibold mb-4 text-[#e9edf3]">Funnel Steps</h2>
+            <div className="space-y-3 mb-6">
               {steps.map((s, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <span className="w-6 text-xs font-bold text-ink-muted text-right">{i + 1}.</span>
+                <div key={i} className="flex flex-col gap-1.5 relative group">
+                  <div className="flex items-center text-xs uppercase tracking-wider font-semibold text-[#5f6a7a]">
+                    <span>Step {i + 1}</span>
+                    {i >= 2 && (
+                      <button
+                        onClick={() => removeStep(i)}
+                        className="ml-auto text-[#5f6a7a] hover:text-[#f87171] opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Remove step"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                   <input
-                    list="funnel-suggestions"
                     value={s}
                     onChange={(e) => updateStep(i, e.target.value)}
-                    placeholder="Event name (e.g. page_viewed)"
-                    className="flex-1 rounded-lg border border-ink-subtle bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-em"
-                    aria-label={`Step ${i + 1} event name`}
+                    placeholder="e.g. signup_completed"
+                    className="w-full bg-[#0a0d13] border border-[#22283a] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6366f1]/40 focus:border-[#6366f1] text-[#e9edf3] placeholder-[#556374] transition-all font-mono"
                   />
-                  <button type="button" onClick={() => removeStep(i)} disabled={steps.length <= 2} className="px-2 py-2 text-xs text-red-600 bg-red-50 rounded-lg border border-red-100 disabled:opacity-30 hover:bg-red-100" aria-label={`Remove step ${i + 1}`}>Remove</button>
                 </div>
               ))}
+
+              {steps.length < 5 && (
+                <button
+                  onClick={addStep}
+                  className="w-full flex items-center justify-center gap-2 py-2 mt-4 text-xs font-semibold uppercase tracking-wider text-[#949dac] border border-dashed border-[#22283a] rounded-xl hover:bg-[#171b27] hover:text-[#e9edf3] hover:border-[#444c68] transition-colors"
+                >
+                  <Plus size={14} /> Add Step
+                </button>
+              )}
             </div>
-            <datalist id="funnel-suggestions">
-              {STEP_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
-            </datalist>
-            <button type="button" onClick={addStep} disabled={steps.length >= 5} className="mt-3 px-3 py-1.5 text-xs font-medium text-ink-soft bg-paper border border-ink-subtle rounded-lg hover:border-ink-soft disabled:opacity-50">
-              + Add step
+
+            <button
+              onClick={fetchFunnel}
+              disabled={loading || steps.length < 2}
+              className="w-full bg-[#6366f1] hover:bg-[#4f46e5] text-white font-medium py-2.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center"
+            >
+              {loading ? <Loader2 size={20} className="animate-spin" /> : 'Calculate Funnel'}
             </button>
           </div>
+        </div>
 
-          <button type="submit" disabled={loading || steps.filter(Boolean).length < 2} className="rounded-lg bg-ink-strong text-white text-sm font-medium px-4 py-2 hover:bg-ink-soft transition disabled:opacity-50">
-            Compute funnel
-          </button>
-        </form>
-
-        {err && <div role="alert" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3 mb-6 border border-red-100">{err}</div>}
-
-        {computed && (
-          <section aria-label="Funnel results" className="rounded-2xl bg-canvas border border-ink-divider shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-ink mb-4">Funnel results</h2>
-            <div className="space-y-4">
-              {computed.map((step, i) => (
-                <article key={step.level} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-ink">{i + 1}. {steps[i]}</span>
-                    <span className="text-ink-soft">{step.count.toLocaleString()} users ({step.rate.toFixed(1)}% of first step)</span>
-                  </div>
-                  <div className="h-2 bg-ink-divider rounded-full overflow-hidden" role="progressbar" aria-valuenow={Math.round(step.rate)} aria-valuemin={0} aria-valuemax={100} aria-label={`Step ${i + 1} conversion: ${step.rate.toFixed(1)}%`}>
-                    <div className="h-full bg-em rounded-full transition-all duration-300" style={{ width: `${Math.max(2, Math.min(100, step.rate))}%` }}></div>
-                  </div>
-                  {i > 0 && (
-                    <p className="text-xs text-ink-muted">
-                      {step.dropOff.toLocaleString()} dropped off from step {i} ({step.dropOffRate.toFixed(1)}% drop-off)
-                    </p>
-                  )}
-                </article>
-              ))}
+        {/* Right Col: Visualization */}
+        <div className="lg:col-span-8 flex flex-col min-h-[500px]">
+          {error && (
+            <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
             </div>
-            <aside className="mt-6 pt-4 border-t border-ink-divider text-xs text-ink-muted leading-relaxed">
-              <p><strong>How this is calculated:</strong> A user converts through the funnel if they complete each step in order within a 7-day window (604800 seconds). Users are identified by <code className="font-mono">COALESCE(user_id, anonymous_id)</code>. Counts reflect distinct users per step, ordered by time.</p>
-            </aside>
-          </section>
-        )}
+          )}
 
-        {!computed && !loading && !err && (
-          <p className="text-sm text-ink-muted" role="region" aria-label="Empty funnel state">Configure at least 2 steps and compute the funnel to see results.</p>
-        )}
-      </main>
-    </>
+          <div className="bg-[#121620] border border-[#22283a] rounded-2xl p-6 shadow-lg flex-1 flex flex-col relative overflow-hidden">
+            <h2 className="text-sm font-semibold mb-6 flex justify-between items-center text-[#e9edf3]">
+              <span>Conversion Analysis</span>
+              <span className="text-xs text-[#5f6a7a] font-normal">Last 30 Days</span>
+            </h2>
+
+            {loading ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374] bg-[#121620]/50 backdrop-blur-sm z-10">
+                <Loader2 size={32} className="animate-spin mb-4 text-[#6366f1]" />
+                <p className="text-sm">Calculating conversions...</p>
+              </div>
+            ) : !funnelData ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374] mt-10">
+                <BarChart size={32} className="mb-4 opacity-50" />
+                <p className="text-sm">Run a calculation to see the funnel.</p>
+              </div>
+            ) : funnelData.length === 0 || funnelData[0].count === 0 ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[#556374] mt-10">
+                <BarChart size={32} className="mb-4 opacity-50" />
+                <p className="text-sm">No data flowing into Step 1 for this time range.</p>
+              </div>
+            ) : (
+              <div className="flex-1 min-h-0 flex flex-col">
+                {/* Stats row */}
+                <div className="flex gap-4 mb-8 p-4 bg-[#171b27] rounded-xl border border-[#22283a] items-center">
+                  <div className="flex-1">
+                    <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6a7a] mb-1">Total Conversion</div>
+                    <div className="text-2xl font-extrabold text-[#34d399]">
+                      {chartData[chartData.length - 1].conversion.toFixed(1)}%
+                    </div>
+                  </div>
+                  <div className="text-[#444c68]">
+                    <ArrowRight size={24} strokeWidth={1} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[11px] uppercase tracking-wider font-semibold text-[#5f6a7a] mb-1">Users Completed</div>
+                    <div className="text-2xl font-extrabold text-[#e9edf3]">
+                      {chartData[chartData.length - 1].count.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chart */}
+                <div className="flex-1 mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsBarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#22283a" />
+                      <XAxis dataKey="name" stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} dy={16} />
+                      <YAxis stroke="#5f6a7a" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                      <Tooltip
+                        cursor={{ fill: '#171b27', opacity: 0.5 }}
+                        contentStyle={{ backgroundColor: '#141921', borderColor: '#22283a', borderRadius: '12px', color: '#e9edf3', fontSize: '13px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)' }}
+                        formatter={(val: any, name: any) => [val.toLocaleString(), name === 'count' ? 'Users' : name]}
+                        labelStyle={{ color: '#818cf8', fontWeight: 600, marginBottom: '8px' }}
+                      />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={80}>
+                        {chartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={index === 0 ? '#6366f1' : index === chartData.length - 1 ? '#34d399' : '#818cf8'} fillOpacity={0.9} />
+                        ))}
+                      </Bar>
+                    </RechartsBarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
+    </AppShell>
   );
 }

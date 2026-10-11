@@ -32,7 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const apiBase = process.env.API_BASE_URL || 'http://localhost:3000';
 
   // Normalize: /api/proxy/v1/... -> v1/...
-  const rawPath = req.query['...path'];
+  const rawPath = req.query.path ?? req.query['...path'];
   const path = Array.isArray(rawPath) ? rawPath.join('/') : rawPath || '';
   if (!isAllowed(path)) {
     return res.status(403).json({ error: 'Forbidden', message: 'Path not allowed' });
@@ -42,7 +42,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Forward only whitelisted query params
   const allowedParams = ['workspaceId', 'startDate', 'endDate', 'interval', 'eventName', 'limit', 'offset', 'period'];
   for (const key of Object.keys(req.query)) {
-    if (key === '...path') continue;
+    if (key === 'path' || key === '...path') continue;
     if (allowedParams.includes(key)) {
       const val = req.query[key];
       if (Array.isArray(val)) val.forEach((v) => url.searchParams.append(key, v));
@@ -74,6 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const timeout = setTimeout(() => controller.abort(), 15000); // bounded 15s timeout
     let body: string | undefined;
     if (req.body && Object.keys(req.body).length > 0) body = JSON.stringify(req.body);
+    else if (req.method !== 'GET' && req.method !== 'HEAD') body = '{}';
 
     const upstream = await fetch(url.toString(), {
       method: req.method,

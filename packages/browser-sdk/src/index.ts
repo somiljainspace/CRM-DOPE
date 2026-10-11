@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { randomUUID } from 'crypto';
 
 export interface BrowserSDKConfig {
   key: string;
@@ -12,6 +11,13 @@ export interface BrowserSDKConfig {
 export interface TrackPayload { event: string; properties?: Record<string, unknown>; }
 export interface IdentifyPayload { userId: string; traits?: Record<string, unknown>; }
 
+function newEventId(): string {
+  if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 const ConfigSchema = z.object({
   key: z.string().min(8).refine(k => k.startsWith('pk_'), { message: 'Browser SDK requires publishable pk_ key' }),
   endpoint: z.string().optional(),
@@ -22,7 +28,7 @@ const ConfigSchema = z.object({
 
 export class BrowserSDK {
   private config: z.infer<typeof ConfigSchema>;
-  private queue: Array<{ eventId: string; payload: TrackPayload | IdentifyPayload }> = [];
+  private queue: Array<{ eventId: string; kind: 'track' | 'identify'; payload: TrackPayload | IdentifyPayload }> = [];
   private anonymousId?: string;
   private userId?: string;
   private timer?: ReturnType<typeof setInterval>;
@@ -48,21 +54,30 @@ export class BrowserSDK {
   identify(payload: IdentifyPayload) {
     if (!this.consent) return;
     this.userId = payload.userId;
-    this.queue.push({ eventId: randomUUID(), payload });
+    this.queue.push({ eventId: newEventId(), kind: 'identify', payload });
   }
 
   reset() { this.userId = undefined; this.anonymousId = undefined; this.initAnonymous(); }
 
   track(payload: TrackPayload) {
     if (!this.consent) return;
-    this.queue.push({ eventId: randomUUID(), payload });
+    this.queue.push({ eventId: newEventId(), kind: 'track', payload });
     if (this.queue.length >= this.config.batchSize) this.flush();
   }
 
   flush() {
     if (!this.consent || this.queue.length === 0) return;
     const batch = this.queue.splice(0, this.config.batchSize);
-    const body = JSON.stringify({ batch: batch.map(b => ({
+    const body = JSON.stringify({ batch: batch.map(b => b.kind === 'identify' ? ({
+      eventId: b.eventId,
+      timestamp: new Date().toISOString(),
+      type: 'identify',
+      event: 'identify',
+      properties: {},
+      traits: (b.payload as IdentifyPayload).traits || {},
+      anonymousId: this.anonymousId,
+      userId: this.userId,
+    }) : ({
       eventId: b.eventId,
       timestamp: new Date().toISOString(),
       type: 'track',

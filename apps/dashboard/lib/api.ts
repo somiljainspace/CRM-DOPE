@@ -25,7 +25,7 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 export async function apiFetch<T>(
   path: string,
   options: {
-    method?: 'GET' | 'POST';
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     query?: Record<string, string | number | undefined>;
     body?: unknown;
     signal?: AbortSignal;

@@ -15,7 +15,10 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "health": "bash scripts/healthcheck.sh",
-    "seed": "npm run seed --workspaces --if-present"
+    "seed": "npm run seed --workspaces --if-present",
+    "bootstrap:owner": "bash scripts/bootstrap-owner.sh",
+    "bootstrap:demo": "bash scripts/bootstrap-demo.sh",
+    "seed:synthetic": "node scripts/seed-synthetic.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
